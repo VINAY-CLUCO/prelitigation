@@ -244,10 +244,10 @@ export default function ResearchPage() {
         `
       }} />
 
-      <div style={{ padding: '28px 40px', maxWidth: 1140 }}>
+      <div style={{ padding: '40px 48px', maxWidth: 1200, margin: '0 auto' }}>
 
         {/* ── Page Header ─────────────────────────────────────────────────── */}
-        <div style={{ marginBottom: 28 }}>
+        <div style={{ marginBottom: 36 }}>
           <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', flexWrap: 'wrap', gap: 16 }}>
             {/* Title block */}
             <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
@@ -316,12 +316,9 @@ export default function ResearchPage() {
         </div>
 
         {/* ── Platform Tab Bar ─────────────────────────────────────────────── */}
-        <div style={{
-          display: 'flex', gap: 4, padding: '5px',
-          backgroundColor: 'var(--bg-surface)',
-          border: '1px solid var(--border-default)',
-          borderRadius: 10, marginBottom: 20,
-          boxShadow: 'var(--shadow-xs)',
+        <div className="premium-card" style={{
+          display: 'flex', gap: 6, padding: '6px',
+          borderRadius: 12, marginBottom: 24,
         }}>
           {PLATFORMS.map((p) => {
             const isActive = p.id === activeId;
@@ -331,31 +328,43 @@ export default function ResearchPage() {
                 onClick={() => switchTab(p.id)}
                 className={`pl-tab${isActive ? ' pl-tab-active' : ''}`}
                 style={{
-                  flex: 1, border: isActive ? `1.5px solid ${p.borderColor}` : '1.5px solid transparent',
-                  borderRadius: 7, cursor: 'pointer',
+                  flex: 1,
+                  border: '1px solid ' + (isActive ? p.borderColor : 'transparent'),
+                  borderRadius: 8,
+                  cursor: 'pointer',
                   backgroundColor: isActive ? p.bgColor : 'transparent',
-                  padding: '11px 8px', textAlign: 'center',
-                  transition: 'all 0.18s ease',
-                  display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4,
+                  padding: '12px 10px',
+                  textAlign: 'center',
+                  transition: 'all var(--transition-base)',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  gap: 4,
+                }}
+                onMouseEnter={(e) => {
+                  if (!isActive) e.currentTarget.style.backgroundColor = 'var(--bg-hover)';
+                }}
+                onMouseLeave={(e) => {
+                  if (!isActive) e.currentTarget.style.backgroundColor = 'transparent';
                 }}
               >
                 <span style={{
-                  fontSize: 13.5, fontWeight: isActive ? 700 : 500,
+                  fontSize: 14, fontWeight: 700,
                   color: isActive ? p.color : 'var(--text-secondary)',
-                  letterSpacing: '-0.2px',
+                  letterSpacing: '-0.3px',
                 }}>
                   {p.name}
                 </span>
                 <span style={{
-                  fontSize: 9.5, fontWeight: 700, letterSpacing: 0.7, textTransform: 'uppercase',
+                  fontSize: 9.5, fontWeight: 700, letterSpacing: 0.8, textTransform: 'uppercase',
                   color: isActive ? p.color : 'var(--text-muted)',
-                  display: 'flex', alignItems: 'center', gap: 3,
+                  display: 'flex', alignItems: 'center', gap: 4,
                 }}>
                   {p.status === 'live' ? (
                     <>
                       <span style={{
                         display: 'inline-block', width: 5, height: 5,
-                        borderRadius: '50%', backgroundColor: isActive ? p.color : '#9B9B9B',
+                        borderRadius: '50%', backgroundColor: isActive ? p.color : 'var(--text-placeholder)',
                         ...(isActive ? { animation: 'pulse-dot 2s infinite' } : {}),
                       }} />
                       LIVE
@@ -607,12 +616,11 @@ function LiveSearchArea({
 function CLResultCard({ result, platform, idx }: { result: CLResult; platform: Platform; idx: number }) {
   return (
     <div
-      className="result-card surface"
+      className="result-card premium-card hover-lift"
       style={{
-        borderRadius: 10, overflow: 'hidden',
+        overflow: 'hidden',
         display: 'flex',
         animation: `fade-up 0.35s ease-out ${idx * 60}ms both`,
-        boxShadow: 'var(--shadow-xs)',
       }}
     >
       {/* Accent bar */}
@@ -731,12 +739,11 @@ function GovResultCard({ result, idx }: { result: GovResult; idx: number }) {
 
   return (
     <div
-      className="result-card surface"
+      className="result-card premium-card hover-lift"
       style={{
-        borderRadius: 10, overflow: 'hidden',
+        overflow: 'hidden',
         display: 'flex',
         animation: `fade-up 0.35s ease-out ${idx * 60}ms both`,
-        boxShadow: 'var(--shadow-xs)',
       }}
     >
       {/* Accent bar */}
@@ -873,12 +880,11 @@ function GovResultCard({ result, idx }: { result: GovResult; idx: number }) {
 function ScholarResultCard({ result, platform, idx }: { result: ScholarResult; platform: Platform; idx: number }) {
   return (
     <div
-      className="result-card surface"
+      className="result-card premium-card hover-lift"
       style={{
-        borderRadius: 10, overflow: 'hidden',
+        overflow: 'hidden',
         display: 'flex',
         animation: `fade-up 0.35s ease-out ${idx * 60}ms both`,
-        boxShadow: 'var(--shadow-xs)',
       }}
     >
       {/* Accent bar */}
@@ -1008,8 +1014,8 @@ function PremiumCard({ platform }: { platform: Platform }) {
 
   return (
     <div
-      className="surface"
-      style={{ padding: '36px 40px', boxShadow: 'var(--shadow-sm)', animation: 'fade-up 0.3s ease-out', borderRadius: 12 }}
+      className="premium-card"
+      style={{ padding: '36px 40px', animation: 'fade-up 0.3s ease-out', borderRadius: 14 }}
     >
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 28, flexWrap: 'wrap', gap: 14 }}>
@@ -1164,9 +1170,9 @@ function SkeletonLoader() {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-      {[1, 2, 3].map((i) => (
-        <div key={i} className="surface" style={{ borderRadius: 10, padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: 10, boxShadow: 'var(--shadow-xs)' }}>
-          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+    {[1, 2, 3].map((i) => (
+      <div key={i} className="premium-card" style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: 12 }}>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
             <div style={{ ...shimmer, height: 18, width: 70 }} />
             <div style={{ ...shimmer, height: 18, width: 90 }} />
           </div>

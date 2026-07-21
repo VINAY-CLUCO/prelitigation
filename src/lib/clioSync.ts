@@ -64,7 +64,7 @@ async function* fetchAllPages(endpoint: string, token: string, fields: string = 
 /**
  * Downloads the actual physical file from Clio and streams it directly to the local disk.
  */
-async function downloadPhysicalFile(docId: string, token: string, destinationPath: string) {
+export async function downloadPhysicalFile(docId: string, token: string, destinationPath: string) {
   if (fs.existsSync(destinationPath)) return; // Skip if already downloaded
 
   const clioUrl = `https://app.clio.com/api/v4/documents/${docId}/download`;

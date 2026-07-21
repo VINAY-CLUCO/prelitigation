@@ -18,14 +18,15 @@ export async function DELETE(
   }
 
   try {
-    // Attempt to revoke at the provider's end first
-    if (provider === 'gdrive' || provider === 'gmail') {
+    // Attempt to revoke at the provider's end first (only if it is a real live token)
+    const isSimulated = token.access_token.startsWith('simulated_');
+
+    if (!isSimulated && (provider === 'gdrive' || provider === 'gmail')) {
       // Revoke the access_token at Google — also invalidates the refresh_token
       await revokeGoogleToken(token.access_token).catch(() => {
-        // If revoke fails (e.g. already expired), still delete locally
         console.warn(`[Disconnect] Could not revoke ${provider} token at Google, deleting locally anyway`);
       });
-    } else if (provider === 'clio') {
+    } else if (!isSimulated && provider === 'clio') {
       await revokeClioToken(token.access_token).catch(() => {
         console.warn(`[Disconnect] Could not revoke Clio token, deleting locally anyway`);
       });

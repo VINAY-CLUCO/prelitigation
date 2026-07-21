@@ -1,5 +1,5 @@
-// src/app/api/connections/clio/sync/route.ts
-// Initiates a background Clio sync job in the queue and streams status updates in real-time over SSE
+// src/app/api/connections/sync/route.ts
+// Initiates a background sync task in the queue for any connected provider and streams progress using SSE
 
 import { NextResponse } from 'next/server';
 import { getToken } from '@/lib/tokenStore';
@@ -8,10 +8,15 @@ import { startQueueWorker } from '@/lib/queueWorker';
 
 export const dynamic = 'force-dynamic';
 
-export async function GET() {
-  const token = getToken('clio');
-  if (!token) {
-    return NextResponse.json({ error: 'Clio is not connected.' }, { status: 401 });
+export async function GET(request: Request) {
+  const { searchParams } = new URL(request.url);
+  const provider = searchParams.get('provider') || 'clio';
+
+  const token = getToken(provider);
+  
+  // We require active connection tokens for real OAuth systems
+  if (!token && provider !== 'mycase') {
+    return NextResponse.json({ error: `${provider} is not connected.` }, { status: 401 });
   }
 
   // Ensure background worker daemon is active
@@ -19,7 +24,7 @@ export async function GET() {
 
   const encoder = new TextEncoder();
 
-  // Create a ReadableStream to stream Server-Sent Events back to the client
+  // Create a ReadableStream to pipe Server-Sent Events back to settings page
   const stream = new ReadableStream({
     async start(controller) {
       const sendEvent = (msg: string, docsIngested?: number, done = false) => {
@@ -28,11 +33,12 @@ export async function GET() {
       };
 
       try {
-        // 1. Queue a new matter-wide sync job
-        const job = await addJob('clio-matter-sync', {});
-        sendEvent('Sync request initialized. Queued background task...', 0);
+        // Queue the sync job for this specific provider
+        const jobType = provider === 'clio' ? 'clio-matter-sync' : `${provider}-sync`;
+        const job = await addJob(jobType as any, {});
+        sendEvent(`Sync request for ${provider} initialized. Queued background task...`, 0);
 
-        // 2. Poll queue store for job updates and stream them over the SSE connection
+        // Poll queue store for updates
         while (true) {
           await new Promise((resolve) => setTimeout(resolve, 800));
 
@@ -45,7 +51,7 @@ export async function GET() {
           }
 
           if (activeJob.status === 'completed') {
-            sendEvent('Sync complete!', activeJob.progress?.completed ?? 0, true);
+            sendEvent(`Sync complete!`, activeJob.progress?.completed ?? 0, true);
             break;
           }
 
@@ -57,7 +63,7 @@ export async function GET() {
           // Emit progress events
           if (activeJob.progress) {
             sendEvent(
-              activeJob.progress.msg || 'Syncing matters & documents...',
+              activeJob.progress.msg || `Syncing files...`,
               activeJob.progress.completed
             );
           } else {
@@ -67,7 +73,7 @@ export async function GET() {
 
         controller.close();
       } catch (err: unknown) {
-        console.error('[Clio Sync Queue Error]', err);
+        console.error(`[${provider} Sync Queue Error]`, err);
         const message = err instanceof Error ? err.message : 'Unknown sync error';
         sendEvent(`Error: ${message}`, 0, true);
         controller.close();

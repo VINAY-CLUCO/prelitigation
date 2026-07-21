@@ -158,176 +158,255 @@ const baseEvents: EventLog[] = [
 ];
 
 const outcomeConfig = {
-  queued: { label: 'Queued', color: '#2563EB', bg: '#EEF2FF', border: '#BFDBFE' },
-  duplicate: { label: 'Duplicate', color: '#9B9B9B', bg: '#F7F7F5', border: '#E5E4E0' },
-  skipped: { label: 'Skipped', color: '#D97706', bg: '#FFFBEB', border: '#FDE68A' },
-  error: { label: 'Error', color: '#DC2626', bg: '#FEF2F2', border: '#FECACA' },
+  queued: { label: 'Queued', color: 'var(--info)', bg: 'var(--info-light)', border: 'var(--info-border)' },
+  duplicate: { label: 'Duplicate', color: 'var(--text-secondary)', bg: 'var(--bg-hover)', border: 'var(--border-default)' },
+  skipped: { label: 'Skipped', color: 'var(--warning)', bg: 'var(--warning-light)', border: 'var(--warning-border)' },
+  error: { label: 'Error', color: 'var(--danger)', bg: 'var(--danger-light)', border: 'var(--danger-border)' },
+  complete: { label: 'Synced', color: 'var(--success)', bg: 'var(--success-light)', border: 'var(--success-border)' },
 };
 
 const statusConfig: Record<SourceStatus, { label: string; color: string; dot: string; pulse: boolean }> = {
-  listening: { label: 'Listening', color: '#16A34A', dot: '#16A34A', pulse: true },
-  syncing: { label: 'Syncing…', color: '#2563EB', dot: '#2563EB', pulse: true },
-  idle: { label: 'Idle', color: '#9B9B9B', dot: '#9B9B9B', pulse: false },
-  error: { label: 'Error', color: '#DC2626', dot: '#DC2626', pulse: false },
+  listening: { label: 'Listening', color: 'var(--success)', dot: 'var(--success)', pulse: true },
+  syncing: { label: 'Syncing…', color: 'var(--info)', dot: 'var(--info)', pulse: true },
+  idle: { label: 'Idle', color: 'var(--text-muted)', dot: 'var(--border-medium)', pulse: false },
+  error: { label: 'Error', color: 'var(--danger)', dot: 'var(--danger)', pulse: false },
 };
 
 // ─── Main Component ───────────────────────────────────────────────────
 export default function CollectionPage() {
-  const [sources] = useState<Source[]>(initialSources);
-  const [events, setEvents] = useState<EventLog[]>(baseEvents);
+  const [sources, setSources] = useState<Source[]>([]);
+  const [events, setEvents] = useState<EventLog[]>([]);
   const [expandedRule, setExpandedRule] = useState<string | null>(null);
-  const [queueDepth, setQueueDepth] = useState(11);
-  const [processedCount, setProcessedCount] = useState(247);
-  const [tick, setTick] = useState(0);
+  const [queueDepth, setQueueDepth] = useState(0);
+  const [processedCount, setProcessedCount] = useState(0);
+  const [loading, setLoading] = useState(true);
 
-  // Simulate live queue processing
+  // Poll active connection statuses and pipeline stats from endpoint
   useEffect(() => {
-    const interval = setInterval(() => {
-      setTick((t) => t + 1);
-      setQueueDepth((q) => (q > 0 ? q - 1 : Math.floor(Math.random() * 3)));
-      setProcessedCount((c) => c + 1);
-    }, 3500);
-    return () => clearInterval(interval);
+    let active = true;
+
+    const loadData = async () => {
+      try {
+        const [connRes, statsRes] = await Promise.all([
+          fetch('/api/connections/status'),
+          fetch('/api/cms/stats')
+        ]);
+        const connData = await connRes.json();
+        const statsData = await statsRes.json();
+
+        if (!active) return;
+
+        // Build dynamic sources listing based on active credentials
+        const updatedSources: Source[] = [
+          {
+            id: 'gdrive',
+            name: 'Google Drive',
+            iconColor: '#16A34A',
+            status: connData.google?.connected ? 'listening' : 'idle',
+            syncMethod: 'delta+webhook',
+            docsQueued: 0,
+            docsCollected: 0,
+            lastEvent: connData.google?.connected ? 'Listening' : 'Not Connected',
+            latencyMs: 340,
+            rules: [
+              { path: '/Cases/Active/', fileTypes: ['pdf', 'docx'], description: 'Active case documents' },
+            ],
+            icon: (
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
+              </svg>
+            ),
+          },
+          {
+            id: 'gmail',
+            name: 'Gmail',
+            iconColor: '#DC2626',
+            status: connData.google?.connected ? 'listening' : 'idle',
+            syncMethod: 'pubsub',
+            docsQueued: 0,
+            docsCollected: 0,
+            lastEvent: connData.google?.connected ? 'Listening' : 'Not Connected',
+            latencyMs: 820,
+            rules: [
+              { path: 'Label: Legal-Incoming', fileTypes: ['pdf', 'docx'], description: 'Emails tagged Legal-Incoming with attachments' },
+            ],
+            icon: (
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z" />
+                <polyline points="22,6 12,13 2,6" />
+              </svg>
+            ),
+          },
+          {
+            id: 'clio',
+            name: 'Clio Manage',
+            iconColor: '#4F46E5',
+            status: connData.clio?.connected ? (statsData.pendingJobsCount > 0 ? 'syncing' : 'listening') : 'idle',
+            syncMethod: 'webhook',
+            docsQueued: statsData.pendingJobsCount,
+            docsCollected: statsData.totalDocs,
+            lastEvent: connData.clio?.connected ? 'Ready' : 'Not Connected',
+            latencyMs: 120,
+            rules: [
+              { path: 'All Active Matters', fileTypes: ['pdf', 'docx', 'txt'], description: 'Documents on any active matter' },
+            ],
+            icon: (
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
+                <rect width="18" height="18" x="3" y="3" rx="2" />
+                <path d="M9 9h6M9 12h6M9 15h4" />
+              </svg>
+            ),
+          },
+        ];
+
+        setSources(updatedSources);
+        setEvents(statsData.eventLogs || []);
+        setQueueDepth(statsData.pendingJobsCount);
+        setProcessedCount(statsData.totalDocs);
+        setLoading(false);
+      } catch (err) {
+        console.error('Failed to load collection telemetry:', err);
+      }
+    };
+
+    loadData();
+    const timer = setInterval(loadData, 3000);
+    return () => {
+      active = false;
+      clearInterval(timer);
+    };
   }, []);
 
-  // Simulate new events arriving
-  useEffect(() => {
-    if (tick > 0 && tick % 5 === 0) {
-      const newEvent: EventLog = {
-        id: Date.now(),
-        ts: new Date().toLocaleTimeString('en-US', { hour12: false }),
-        source: ['Clio', 'Google Drive', 'Gmail'][Math.floor(Math.random() * 3)],
-        sourceColor: ['#4F46E5', '#16A34A', '#DC2626'][Math.floor(Math.random() * 3)],
-        event: ['matter.document.created', 'drive.file.created', 'message.attachment'][Math.floor(Math.random() * 3)],
-        fileName: ['NewDoc_' + Date.now().toString().slice(-4) + '.pdf', 'Record_Update.docx', 'Filing_Scan.pdf'][Math.floor(Math.random() * 3)],
-        size: ['1.2 MB', '340 KB', '2.8 MB'][Math.floor(Math.random() * 3)],
-        outcome: 'queued',
-      };
-      setEvents((prev) => [newEvent, ...prev.slice(0, 14)]);
-    }
-  }, [tick]);
-
-  const totalQueued = sources.reduce((a, s) => a + s.docsQueued, 0);
+  const totalQueued = queueDepth;
   const activeSources = sources.filter((s) => s.status === 'listening' || s.status === 'syncing').length;
 
   return (
-    <div style={{ padding: '32px 36px', maxWidth: 1120 }}>
+    <div style={{ padding: '40px 48px', maxWidth: 1200, margin: '0 auto' }}>
 
       {/* ── Page Header ── */}
-      <div style={{ marginBottom: 28 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
+      <div style={{ marginBottom: 36 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
           <span style={{
-            fontSize: 10, fontWeight: 700, padding: '3px 9px', borderRadius: 20,
-            backgroundColor: '#F0FDF4', color: '#16A34A', border: '1px solid #BBF7D0',
+            fontSize: 10.5, fontWeight: 800, padding: '3px 10px', borderRadius: 20,
+            backgroundColor: 'var(--success-light)', color: 'var(--success)', border: '1px solid var(--success-border)',
             letterSpacing: '0.6px',
+            textTransform: 'uppercase',
           }}>
             PHASE 1
           </span>
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
             <polyline points="9 18 15 12 9 6" />
           </svg>
-          <span style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 500 }}>Connect &amp; Collect</span>
+          <span style={{ fontSize: 13, color: 'var(--text-muted)', fontWeight: 600 }}>Connect &amp; Collect</span>
         </div>
-        <h1 style={{ fontSize: 22, fontWeight: 700, color: 'var(--text-primary)', letterSpacing: '-0.5px' }}>
+        <h1 style={{ fontSize: 26, fontWeight: 800, color: 'var(--text-primary)', letterSpacing: '-0.6px', lineHeight: 1.2 }}>
           Collection &amp; Sync
         </h1>
-        <p style={{ marginTop: 4, fontSize: 14, color: 'var(--text-secondary)' }}>
+        <p style={{ marginTop: 6, fontSize: 14.5, color: 'var(--text-secondary)' }}>
           Documents are discovered via event-driven webhooks and queued for extraction. Real-time. Zero polling waste.
         </p>
       </div>
 
       {/* ── Top Stats ── */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 14, marginBottom: 28 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 20, marginBottom: 36 }}>
         {[
-          { label: 'Active Sources', value: `${activeSources}`, sub: `of ${sources.length} connected`, color: '#16A34A', bg: '#F0FDF4' },
-          { label: 'Queue Depth', value: `${queueDepth}`, sub: 'documents waiting', color: '#2563EB', bg: '#EEF2FF' },
-          { label: 'Total Collected', value: `${processedCount}`, sub: 'since last reset', color: '#1E3A5F', bg: '#EEF2FF' },
-          { label: 'Avg Webhook Latency', value: '427ms', sub: 'event to queue time', color: '#7C3AED', bg: '#F5F3FF' },
+          { label: 'Active Sources', value: `${activeSources}`, sub: `of ${sources.length} connected`, color: 'var(--success)', bg: 'var(--success-light)', border: 'var(--success-border)' },
+          { label: 'Queue Depth', value: `${queueDepth}`, sub: 'documents waiting', color: 'var(--accent)', bg: 'var(--accent-light)', border: 'var(--accent-border)' },
+          { label: 'Total Collected', value: `${processedCount}`, sub: 'since last reset', color: 'var(--text-primary)', bg: 'var(--bg-hover)', border: 'var(--border-default)' },
+          { label: 'Avg Webhook Latency', value: '427ms', sub: 'event to queue time', color: 'var(--info)', bg: 'var(--info-light)', border: 'var(--info-border)' },
         ].map((s) => (
-          <div key={s.label} className="surface" style={{ padding: '16px 18px', boxShadow: 'var(--shadow-xs)' }}>
-            <div style={{ fontSize: 11, fontWeight: 500, color: 'var(--text-muted)', marginBottom: 8 }}>{s.label}</div>
-            <div style={{ fontSize: 26, fontWeight: 700, color: s.color, letterSpacing: '-0.8px', lineHeight: 1 }}>{s.value}</div>
-            <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 5 }}>{s.sub}</div>
+          <div key={s.label} className="premium-card hover-lift" style={{ padding: '20px' }}>
+            <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-muted)', marginBottom: 10, letterSpacing: '0.2px' }}>{s.label}</div>
+            <div style={{ fontSize: 28, fontWeight: 800, color: s.color, letterSpacing: '-0.8px', lineHeight: 1 }}>{s.value}</div>
+            <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 6 }}>{s.sub}</div>
           </div>
         ))}
       </div>
 
       {/* ── Main 2-column layout ── */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 380px', gap: 18, alignItems: 'start' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: '1.6fr 1fr', gap: 24, alignItems: 'start' }}>
 
         {/* ── Left: Source Cards ── */}
         <div>
-          <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-muted)', letterSpacing: '0.7px', textTransform: 'uppercase', marginBottom: 12 }}>
+          <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-muted)', letterSpacing: '0.8px', textTransform: 'uppercase', marginBottom: 14 }}>
             Active Sources
           </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
             {sources.map((src) => {
               const sCfg = statusConfig[src.status];
               const mCfg = syncMethodConfig[src.syncMethod];
               const isExpanded = expandedRule === src.id;
               return (
-                <div key={src.id} className="surface" style={{ boxShadow: 'var(--shadow-xs)', overflow: 'hidden' }}>
-                  <div style={{ padding: '16px 18px' }}>
+                <div key={src.id} className="premium-card" style={{ overflow: 'hidden' }}>
+                  <div style={{ padding: '20px' }}>
                     {/* Row 1: Icon + Name + Status + Method */}
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
                       <div style={{
-                        width: 40, height: 40, borderRadius: 10, flexShrink: 0,
-                        backgroundColor: '#F0FDF4', border: '1px solid var(--border-default)',
+                        width: 44, height: 44, borderRadius: 10, flexShrink: 0,
+                        backgroundColor: 'var(--bg-base)', border: '1px solid var(--border-default)',
                         display: 'flex', alignItems: 'center', justifyContent: 'center', color: src.iconColor,
+                        boxShadow: '0 2px 4px rgba(0,0,0,0.02)',
                       }}>
                         {src.icon}
                       </div>
-                      <div style={{ flex: 1 }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                          <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-primary)' }}>{src.name}</span>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                          <span style={{ fontSize: 15, fontWeight: 700, color: 'var(--text-primary)' }}>{src.name}</span>
                           {/* Sync method badge */}
                           <span style={{
-                            fontSize: 10, fontWeight: 600, padding: '2px 7px', borderRadius: 10,
+                            fontSize: 10, fontWeight: 700, padding: '2px 8px', borderRadius: 12,
                             backgroundColor: mCfg.bg, color: mCfg.color, border: `1px solid ${mCfg.border}`,
+                            textTransform: 'uppercase', letterSpacing: '0.2px',
                           }}>
                             {mCfg.label}
                           </span>
                         </div>
-                        <div style={{ fontSize: 11.5, color: 'var(--text-muted)', marginTop: 3 }}>
-                          Last event: <strong style={{ color: 'var(--text-secondary)' }}>{src.lastEvent}</strong>
-                          &nbsp;·&nbsp;Latency: <strong style={{ color: 'var(--text-secondary)' }}>{src.latencyMs}ms</strong>
-                          {src.deltaToken && <>&nbsp;·&nbsp;Token: <code style={{ fontSize: 10, backgroundColor: 'var(--bg-base)', padding: '0 4px', borderRadius: 3 }}>{src.deltaToken}</code></>}
+                        <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 4, display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center' }}>
+                          <span>Last: <strong style={{ color: 'var(--text-secondary)' }}>{src.lastEvent}</strong></span>
+                          <span style={{ width: 3, height: 3, borderRadius: '50%', backgroundColor: 'var(--border-medium)' }} />
+                          <span>Latency: <strong style={{ color: 'var(--text-secondary)' }}>{src.latencyMs}ms</strong></span>
+                          {src.deltaToken && (
+                            <>
+                              <span style={{ width: 3, height: 3, borderRadius: '50%', backgroundColor: 'var(--border-medium)' }} />
+                              <span>Token: <code style={{ fontSize: 10.5, backgroundColor: 'var(--bg-hover)', padding: '1px 5px', borderRadius: 4, fontFamily: 'monospace' }}>{src.deltaToken}</code></span>
+                            </>
+                          )}
                         </div>
                       </div>
                       {/* Status indicator */}
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 5, flexShrink: 0 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
                         <div style={{ position: 'relative', width: 8, height: 8 }}>
                           <div style={{ width: 8, height: 8, borderRadius: '50%', backgroundColor: sCfg.dot }} />
                           {sCfg.pulse && (
                             <div style={{
-                              position: 'absolute', inset: -2, borderRadius: '50%',
+                              position: 'absolute', inset: -3, borderRadius: '50%',
                               border: `2px solid ${sCfg.dot}`, opacity: 0.4,
                               animation: 'pulse 1.8s ease-in-out infinite',
                             }} />
                           )}
                         </div>
-                        <span style={{ fontSize: 11.5, fontWeight: 600, color: sCfg.color }}>{sCfg.label}</span>
+                        <span style={{ fontSize: 12, fontWeight: 700, color: sCfg.color }}>{sCfg.label}</span>
                       </div>
                     </div>
 
                     {/* Row 2: Metrics */}
                     <div style={{
-                      marginTop: 14, display: 'flex', gap: 0,
-                      borderRadius: 8, border: '1px solid var(--border-light)',
+                      marginTop: 16, display: 'flex',
+                      borderRadius: 8, border: '1px solid var(--border-default)',
                       overflow: 'hidden',
                     }}>
                       {[
-                        { label: 'In Queue', value: src.docsQueued, color: '#2563EB' },
-                        { label: 'Collected', value: src.docsCollected, color: '#16A34A' },
-                        { label: 'Watching', value: src.rules.length, color: '#7C3AED' },
+                        { label: 'In Queue', value: src.docsQueued, color: 'var(--info)' },
+                        { label: 'Collected', value: src.docsCollected, color: 'var(--success)' },
+                        { label: 'Watching', value: src.rules.length, color: 'var(--accent)' },
                       ].map((m, i) => (
                         <div key={m.label} style={{
-                          flex: 1, padding: '10px 14px', textAlign: 'center',
-                          borderRight: i < 2 ? '1px solid var(--border-light)' : 'none',
+                          flex: 1, padding: '12px 14px', textAlign: 'center',
+                          borderRight: i < 2 ? '1px solid var(--border-default)' : 'none',
                           backgroundColor: 'var(--bg-base)',
                         }}>
-                          <div style={{ fontSize: 18, fontWeight: 700, color: m.color }}>{m.value}</div>
-                          <div style={{ fontSize: 10.5, color: 'var(--text-muted)', marginTop: 2 }}>{m.label}</div>
+                          <div style={{ fontSize: 20, fontWeight: 800, color: m.color, lineHeight: 1.1 }}>{m.value}</div>
+                          <div style={{ fontSize: 11, color: 'var(--text-secondary)', fontWeight: 600, marginTop: 4, textTransform: 'uppercase', letterSpacing: '0.3px' }}>{m.label}</div>
                         </div>
                       ))}
                     </div>
@@ -336,13 +415,16 @@ export default function CollectionPage() {
                     <button
                       onClick={() => setExpandedRule(isExpanded ? null : src.id)}
                       style={{
-                        marginTop: 12, background: 'none', border: 'none', cursor: 'pointer',
-                        display: 'flex', alignItems: 'center', gap: 5,
-                        fontSize: 12, fontWeight: 500, color: 'var(--text-muted)', padding: 0,
+                        marginTop: 14, background: 'none', border: 'none', cursor: 'pointer',
+                        display: 'flex', alignItems: 'center', gap: 6,
+                        fontSize: 12.5, fontWeight: 600, color: 'var(--text-secondary)', padding: 0,
+                        transition: 'color var(--transition-fast)',
                       }}
+                      onMouseEnter={(e) => (e.currentTarget.style.color = 'var(--accent)')}
+                      onMouseLeave={(e) => (e.currentTarget.style.color = 'var(--text-secondary)')}
                     >
                       <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
-                        style={{ transform: isExpanded ? 'rotate(90deg)' : 'none', transition: 'transform 0.15s ease' }}>
+                        style={{ transform: isExpanded ? 'rotate(90deg)' : 'none', transition: 'transform var(--transition-fast)' }}>
                         <polyline points="9 18 15 12 9 6" />
                       </svg>
                       Collection Rules ({src.rules.length})
@@ -351,24 +433,24 @@ export default function CollectionPage() {
 
                   {/* Expanded Rules */}
                   {isExpanded && (
-                    <div style={{ borderTop: '1px solid var(--border-light)', backgroundColor: 'var(--bg-base)' }}>
+                    <div style={{ borderTop: '1px solid var(--border-light)', backgroundColor: 'var(--bg-base)', padding: '4px 0' }}>
                       {src.rules.map((rule, i) => (
                         <div key={i} style={{
-                          padding: '11px 18px',
+                          padding: '12px 20px',
                           borderBottom: i < src.rules.length - 1 ? '1px solid var(--border-light)' : 'none',
-                          display: 'flex', alignItems: 'center', gap: 12,
+                          display: 'flex', alignItems: 'center', gap: 14,
                         }}>
-                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
                             <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
                           </svg>
-                          <div style={{ flex: 1 }}>
-                            <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-primary)', fontFamily: 'monospace' }}>{rule.path}</div>
-                            <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>{rule.description}</div>
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)', fontFamily: 'monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{rule.path}</div>
+                            <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>{rule.description}</div>
                           </div>
-                          <div style={{ display: 'flex', gap: 4 }}>
+                          <div style={{ display: 'flex', gap: 6 }}>
                             {rule.fileTypes.map((ft) => (
                               <span key={ft} style={{
-                                fontSize: 10, fontWeight: 600, padding: '1px 6px', borderRadius: 4,
+                                fontSize: 10, fontWeight: 700, padding: '2px 6px', borderRadius: 4,
                                 backgroundColor: 'var(--bg-surface)', border: '1px solid var(--border-default)',
                                 color: 'var(--text-secondary)', textTransform: 'uppercase',
                               }}>{ft}</span>
@@ -384,110 +466,105 @@ export default function CollectionPage() {
           </div>
 
           {/* Queue Architecture Note */}
-          <div style={{
-            marginTop: 16, padding: '14px 16px', borderRadius: 9,
-            backgroundColor: 'var(--bg-surface)', border: '1px solid var(--border-light)',
-            boxShadow: 'var(--shadow-xs)',
-          }}>
-            <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 8 }}>
+          <div className="premium-card" style={{ marginTop: 20, padding: '20px' }}>
+            <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 12 }}>
               How the Queue Works
             </div>
-            {[
-              { step: '1', text: 'Webhook arrives → ack 200 OK in &lt;50ms', color: '#7C3AED' },
-              { step: '2', text: 'SHA-256 hash checked against local store → duplicate? skip.', color: '#D97706' },
-              { step: '3', text: 'File downloaded → written to <code style="background:#F3F4F6;padding:0 3px;border-radius:3px">~/.cluco/vault/raw/</code>', color: '#2563EB' },
-              { step: '4', text: 'Job pushed to local queue (SQLite-backed, survives restarts)', color: '#16A34A' },
-              { step: '5', text: 'Worker picks up → Textract/OCR → Gemini → save to DB', color: '#1E3A5F' },
-              { step: '6', text: 'Failure? Exponential backoff retry ×3 → Dead queue → alert', color: '#DC2626' },
-            ].map((s) => (
-              <div key={s.step} style={{ display: 'flex', gap: 10, alignItems: 'flex-start', marginBottom: 6 }}>
-                <div style={{
-                  width: 18, height: 18, borderRadius: '50%', backgroundColor: s.color,
-                  color: 'white', fontSize: 9, fontWeight: 700, display: 'flex', alignItems: 'center',
-                  justifyContent: 'center', flexShrink: 0, marginTop: 1,
-                }}>
-                  {s.step}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              {[
+                { step: '1', text: 'Webhook arrives → ack 200 OK in &lt;50ms', color: '#7C3AED' },
+                { step: '2', text: 'SHA-256 hash checked against local store → duplicate? skip.', color: '#D97706' },
+                { step: '3', text: 'File downloaded → written to <code style="background:var(--bg-hover);padding:1px 5px;border-radius:4px;font-family:monospace">~/.cluco/vault/raw/</code>', color: '#2563EB' },
+                { step: '4', text: 'Job pushed to local queue (SQLite-backed, survives restarts)', color: '#16A34A' },
+                { step: '5', text: 'Worker picks up → Textract/OCR → Gemini → save to DB', color: '#1E3A5F' },
+                { step: '6', text: 'Failure? Exponential backoff retry ×3 → Dead queue → alert', color: '#DC2626' },
+              ].map((s) => (
+                <div key={s.step} style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
+                  <div style={{
+                    width: 20, height: 20, borderRadius: '50%', backgroundColor: s.color,
+                    color: 'white', fontSize: 10, fontWeight: 800, display: 'flex', alignItems: 'center',
+                    justifyContent: 'center', flexShrink: 0, marginTop: 1,
+                  }}>
+                    {s.step}
+                  </div>
+                  <span style={{ fontSize: 13, color: 'var(--text-secondary)', lineHeight: 1.5 }}
+                    dangerouslySetInnerHTML={{ __html: s.text }} />
                 </div>
-                <span style={{ fontSize: 12, color: 'var(--text-secondary)', lineHeight: 1.5 }}
-                  dangerouslySetInnerHTML={{ __html: s.text }} />
-              </div>
-            ))}
+              ))}
+            </div>
           </div>
         </div>
 
         {/* ── Right: Live Event Feed ── */}
         <div>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
-            <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-muted)', letterSpacing: '0.7px', textTransform: 'uppercase' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyItems: 'space-between', justifyContent: 'space-between', marginBottom: 14 }}>
+            <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-muted)', letterSpacing: '0.8px', textTransform: 'uppercase' }}>
               Live Event Feed
             </span>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-              <div style={{ width: 6, height: 6, borderRadius: '50%', backgroundColor: '#16A34A', animation: 'pulse 1.5s ease-in-out infinite' }} />
-              <span style={{ fontSize: 11, color: '#16A34A', fontWeight: 600 }}>Live</span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, backgroundColor: 'var(--success-light)', border: '1px solid var(--success-border)', padding: '2px 8px', borderRadius: 12 }}>
+              <div style={{ width: 6, height: 6, borderRadius: '50%', backgroundColor: 'var(--success)', animation: 'pulse 1.5s ease-in-out infinite' }} />
+              <span style={{ fontSize: 11, color: 'var(--success)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.3px' }}>Live</span>
             </div>
           </div>
 
-          <div className="surface" style={{ overflow: 'hidden', boxShadow: 'var(--shadow-xs)' }}>
+          <div className="premium-card" style={{ overflow: 'hidden', marginBottom: 20 }}>
             {events.map((ev, i) => {
               const oc = outcomeConfig[ev.outcome];
               return (
                 <div key={ev.id} style={{
-                  padding: '11px 14px',
+                  padding: '14px 18px',
                   borderBottom: i < events.length - 1 ? '1px solid var(--border-light)' : 'none',
-                  backgroundColor: i === 0 ? '#FAFFFE' : 'transparent',
+                  backgroundColor: i === 0 ? 'rgba(79, 70, 229, 0.02)' : 'transparent',
                   transition: 'background-color 0.3s ease',
                 }}>
                   {/* Source + time */}
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
-                    <span style={{ fontSize: 11, fontWeight: 700, color: ev.sourceColor }}>{ev.source}</span>
-                    <span style={{ fontSize: 10.5, color: 'var(--text-muted)', fontFamily: 'monospace' }}>{ev.ts}</span>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                    <span style={{ fontSize: 12, fontWeight: 800, color: ev.sourceColor }}>{ev.source}</span>
+                    <span style={{ fontSize: 11, color: 'var(--text-muted)', fontFamily: 'monospace' }}>{ev.ts}</span>
                   </div>
                   {/* Event type */}
-                  <div style={{ fontSize: 10.5, color: 'var(--text-muted)', marginBottom: 5, fontFamily: 'monospace' }}>
+                  <div style={{ fontSize: 11.5, color: 'var(--text-muted)', marginBottom: 6, fontFamily: 'monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                     {ev.event}
                   </div>
                   {/* Filename + outcome */}
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10 }}>
                     <span style={{
-                      fontSize: 11.5, fontWeight: 500, color: 'var(--text-primary)',
-                      overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 190,
+                      fontSize: 13, fontWeight: 600, color: 'var(--text-primary)',
+                      overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
                     }}>
                       {ev.fileName}
                     </span>
-                    <span style={{
-                      fontSize: 10, fontWeight: 600, padding: '1px 7px', borderRadius: 10,
+                    <span className="badge" style={{
+                      fontSize: 10, fontWeight: 700, padding: '2px 8px', borderRadius: 12,
                       backgroundColor: oc.bg, color: oc.color, border: `1px solid ${oc.border}`,
-                      flexShrink: 0, marginLeft: 6,
+                      flexShrink: 0, textTransform: 'uppercase', letterSpacing: '0.2px',
                     }}>
                       {oc.label}
                     </span>
                   </div>
-                  <div style={{ fontSize: 10.5, color: 'var(--text-muted)', marginTop: 3 }}>{ev.size}</div>
+                  <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4, fontWeight: 500 }}>{ev.size}</div>
                 </div>
               );
             })}
           </div>
 
           {/* Deduplication note */}
-          <div style={{
-            marginTop: 12, padding: '12px 14px', borderRadius: 8,
-            backgroundColor: 'var(--bg-surface)', border: '1px solid var(--border-light)',
-          }}>
-            <div style={{ fontSize: 11.5, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 6 }}>
+          <div className="premium-card" style={{ padding: '16px' }}>
+            <div style={{ fontSize: 13.5, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 6 }}>
               SHA-256 Deduplication
             </div>
-            <div style={{ fontSize: 11, color: 'var(--text-muted)', lineHeight: 1.6 }}>
+            <p style={{ fontSize: 12.5, color: 'var(--text-muted)', lineHeight: 1.6 }}>
               Every file is fingerprinted before queuing. Same content from two different sources (Google Drive + Email) is detected and skipped automatically. No double-billing on Textract.
-            </div>
-            <div style={{ marginTop: 8, display: 'flex', gap: 12 }}>
+            </p>
+            <div style={{ marginTop: 14, display: 'flex', gap: 16 }}>
               {[
                 { label: 'Unique files', value: '247' },
                 { label: 'Duplicates caught', value: '18' },
                 { label: 'Savings', value: '$3.20' },
               ].map((m) => (
-                <div key={m.label} style={{ textAlign: 'center' }}>
-                  <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--text-primary)' }}>{m.value}</div>
-                  <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>{m.label}</div>
+                <div key={m.label} style={{ flex: 1, backgroundColor: 'var(--bg-base)', border: '1px solid var(--border-default)', padding: '8px 10px', borderRadius: 8, textAlign: 'center' }}>
+                  <div style={{ fontSize: 16, fontWeight: 800, color: 'var(--text-primary)' }}>{m.value}</div>
+                  <div style={{ fontSize: 10, color: 'var(--text-secondary)', fontWeight: 600, marginTop: 2, textTransform: 'uppercase', letterSpacing: '0.2px' }}>{m.label}</div>
                 </div>
               ))}
             </div>
@@ -498,7 +575,7 @@ export default function CollectionPage() {
       <style>{`
         @keyframes pulse {
           0%, 100% { opacity: 1; transform: scale(1); }
-          50% { opacity: 0.5; transform: scale(1.4); }
+          50% { opacity: 0.5; transform: scale(1.3); }
         }
       `}</style>
     </div>

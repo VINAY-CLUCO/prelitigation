@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, Suspense } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 
 // ─── Types ─────────────────────────────────────────────────────────
@@ -85,9 +85,9 @@ const initialConnections: Connection[] = [
     description: 'Watch specified folders for new legal documents and auto-ingest them into the pipeline.',
     category: 'Cloud Storage',
     authMethod: 'oauth',
-    status: 'connected',
-    lastSync: '2 mins ago',
-    docsIngested: 84,
+    status: 'disconnected',
+    lastSync: undefined,
+    docsIngested: undefined,
     iconColor: '#16A34A',
     scopes: [
       { label: 'drive.readonly', description: 'Read files from your Google Drive' },
@@ -147,9 +147,9 @@ const initialConnections: Connection[] = [
     description: 'Watch labeled Gmail threads and auto-extract legal document attachments.',
     category: 'Communication',
     authMethod: 'oauth',
-    status: 'connected',
-    lastSync: '18 mins ago',
-    docsIngested: 31,
+    status: 'disconnected',
+    lastSync: undefined,
+    docsIngested: undefined,
     iconColor: '#DC2626',
     scopes: [
       { label: 'gmail.readonly', description: 'Read emails in your Gmail account' },
@@ -228,7 +228,7 @@ const OAUTH_ROUTES: Record<string, string> = {
 };
 
 // ─── Main Component ─────────────────────────────────────────────────
-export default function SettingsPage() {
+function SettingsPageContent() {
   const [connections, setConnections] = useState<Connection[]>(initialConnections);
   const [activeModal, setActiveModal] = useState<string | null>(null);
   const [formValues, setFormValues] = useState<Record<string, string>>({});
@@ -244,7 +244,7 @@ export default function SettingsPage() {
   const fetchStatus = useCallback(async () => {
     try {
       const res = await fetch('/api/connections/status');
-      const status = await res.json() as Record<string, { connected: boolean; email?: string; connected_at?: string }>;
+      const status = await res.json() as Record<string, { connected: boolean; email?: string; connected_at?: string; docsIngested?: number }>;
       setConnections((prev) =>
         prev.map((c) => ({
           ...c,
@@ -253,6 +253,7 @@ export default function SettingsPage() {
             ? new Date(status[c.id].connected_at!).toLocaleString()
             : undefined,
           connectedEmail: status[c.id]?.email,
+          docsIngested: status[c.id]?.connected ? (status[c.id].docsIngested ?? 0) : undefined,
         }))
       );
     } catch {
@@ -288,11 +289,6 @@ export default function SettingsPage() {
   const getConnection = (id: string) => connections.find((c) => c.id === id);
 
   const openModal = (id: string) => {
-    // If it's an OAuth-based connection, go directly to the provider login
-    if (OAUTH_ROUTES[id]) {
-      window.location.href = OAUTH_ROUTES[id];
-      return;
-    }
     setFormValues({});
     setTestResult(null);
     setActiveModal(id);
@@ -313,25 +309,26 @@ export default function SettingsPage() {
     setToast({ type: 'success', message: `${id} disconnected` });
   };
 
-  const handleOAuthConnect = (id: string) => {
-    // Real OAuth — redirect to provider
-    if (OAUTH_ROUTES[id]) {
-      window.location.href = OAUTH_ROUTES[id];
-      return;
-    }
-    // Fallback for non-mapped providers
-    setTimeout(() => {
-      setConnections((prev) =>
-        prev.map((c) => c.id === id ? {
-          ...c,
-          status: 'connected',
-          lastSync: 'Just now',
-          docsIngested: 0,
-        } : c)
-      );
+  const handleSimulateConnect = async (id: string) => {
+    setSimulatingOAuth(true);
+    try {
+      const res = await fetch('/api/connections/simulate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ provider: id }),
+      });
+      if (res.ok) {
+        setToast({ type: 'success', message: `${getConnection(id)?.name} connected in simulator mode.` });
+        await fetchStatus();
+        closeModal();
+      } else {
+        setToast({ type: 'error', message: 'Failed to initialize simulator mode.' });
+      }
+    } catch {
+      setToast({ type: 'error', message: 'Failed to initialize simulator mode.' });
+    } finally {
       setSimulatingOAuth(false);
-      closeModal();
-    }, 2200);
+    }
   };
 
   const handleTestConnection = () => {
@@ -360,14 +357,9 @@ export default function SettingsPage() {
   };
 
   const handleSync = (id: string) => {
-    if (id !== 'clio') {
-      setToast({ type: 'error', message: 'Sync is not supported for this provider yet.' });
-      return;
-    }
-    
     setSyncingState((prev) => ({ ...prev, [id]: { active: true, msg: 'Initializing sync...', count: 0 } }));
     
-    const eventSource = new EventSource('/api/connections/clio/sync');
+    const eventSource = new EventSource(`/api/connections/sync?provider=${id}`);
     
     eventSource.onmessage = (event) => {
       const data = JSON.parse(event.data);
@@ -412,47 +404,48 @@ export default function SettingsPage() {
   const activeConn = activeModal ? getConnection(activeModal) : null;
 
   return (
-    <div style={{ padding: '32px 36px', maxWidth: 880 }}>
+    <div style={{ padding: '40px 48px', maxWidth: 1000, margin: '0 auto' }}>
 
       {/* ── Page Header ── */}
-      <div style={{ marginBottom: 28 }}>
-        <h1 style={{ fontSize: 22, fontWeight: 700, color: 'var(--text-primary)', letterSpacing: '-0.5px' }}>
+      <div style={{ marginBottom: 36 }}>
+        <h1 style={{ fontSize: 26, fontWeight: 800, color: 'var(--text-primary)', letterSpacing: '-0.6px', lineHeight: 1.2 }}>
           Settings
         </h1>
-        <p style={{ marginTop: 4, fontSize: 14, color: 'var(--text-secondary)' }}>
+        <p style={{ marginTop: 6, fontSize: 14.5, color: 'var(--text-secondary)' }}>
           Manage integrations, authentication, and pipeline configuration.
         </p>
       </div>
 
       {/* ── MCP Status Banner ── */}
       <div style={{
-        padding: '14px 20px',
-        borderRadius: 10,
+        padding: '16px 20px',
+        borderRadius: 12,
         backgroundColor: 'var(--accent-light)',
         border: '1px solid var(--accent-border)',
-        marginBottom: 32,
+        marginBottom: 36,
         display: 'flex',
         alignItems: 'center',
         gap: 14,
+        boxShadow: '0 2px 8px rgba(79, 70, 229, 0.03)',
       }}>
-        <div style={{ width: 38, height: 38, borderRadius: 9, backgroundColor: 'var(--accent)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <div style={{ width: 38, height: 38, borderRadius: 9, backgroundColor: 'var(--accent)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, boxShadow: '0 2px 8px rgba(79, 70, 229, 0.2)' }}>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
             <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
             <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
           </svg>
         </div>
         <div style={{ flex: 1 }}>
-          <div style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--accent)' }}>MCP Connections</div>
-          <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 2 }}>
+          <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--accent)' }}>MCP Connections</div>
+          <div style={{ fontSize: 12.5, color: 'var(--text-secondary)', marginTop: 2 }}>
             All credentials are encrypted with AES-256 before storage. OAuth tokens are scoped to minimum required permissions.
           </div>
         </div>
         <div style={{ textAlign: 'right', flexShrink: 0 }}>
-          <div style={{ fontSize: 20, fontWeight: 700, color: 'var(--accent)' }}>
+          <div style={{ fontSize: 22, fontWeight: 800, color: 'var(--accent)' }}>
             {connections.filter((c) => c.status === 'connected').length}
-            <span style={{ fontSize: 13, fontWeight: 500, color: 'var(--text-muted)' }}>/{connections.length}</span>
+            <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-muted)' }}>/{connections.length}</span>
           </div>
-          <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>connected</div>
+          <div style={{ fontSize: 11, color: 'var(--text-secondary)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.3px', marginTop: 1 }}>connected</div>
         </div>
       </div>
 
@@ -460,44 +453,41 @@ export default function SettingsPage() {
       {categoryOrder.map((category) => {
         const catConnections = connections.filter((c) => c.category === category);
         return (
-          <div key={category} style={{ marginBottom: 32 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
-              <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-secondary)', letterSpacing: '0.8px' }}>
-                {category.toUpperCase()}
+          <div key={category} style={{ marginBottom: 36 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
+              <span style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--text-secondary)', letterSpacing: '0.8px', textTransform: 'uppercase' }}>
+                {category}
               </span>
               <div style={{ flex: 1, height: 1, backgroundColor: 'var(--border-light)' }} />
-              <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+              <span style={{ fontSize: 11.5, color: 'var(--text-muted)', fontWeight: 600 }}>
                 {catConnections.filter((c) => c.status === 'connected').length}/{catConnections.length} active
               </span>
             </div>
 
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
               {catConnections.map((conn) => {
                 const authCfg = authMethodConfig[conn.authMethod];
                 const isConnected = conn.status === 'connected';
                 return (
                   <div
                     key={conn.id}
-                    className="surface"
+                    className="premium-card hover-lift"
                     style={{
-                      padding: '18px 20px',
-                      boxShadow: 'var(--shadow-xs)',
-                      borderColor: isConnected ? 'var(--success-border)' : 'var(--border-default)',
-                      transition: 'box-shadow 0.15s ease',
+                      padding: '20px',
+                      border: isConnected ? '1px solid var(--success-border)' : '1px solid var(--border-default)',
                     }}
-                    onMouseEnter={(e) => ((e.currentTarget as HTMLElement).style.boxShadow = 'var(--shadow-sm)')}
-                    onMouseLeave={(e) => ((e.currentTarget as HTMLElement).style.boxShadow = 'var(--shadow-xs)')}
                   >
                     {/* ── Row 1: Icon + Info + Status + Actions ── */}
-                    <div style={{ display: 'flex', alignItems: 'flex-start', gap: 14 }}>
+                    <div style={{ display: 'flex', alignItems: 'flex-start', gap: 16 }}>
                       {/* Icon */}
                       <div style={{
-                        width: 42, height: 42, borderRadius: 10, flexShrink: 0,
-                        backgroundColor: isConnected ? '#F0FDF4' : 'var(--bg-base)',
+                        width: 44, height: 44, borderRadius: 10, flexShrink: 0,
+                        backgroundColor: isConnected ? 'var(--success-light)' : 'var(--bg-base)',
                         border: `1px solid ${isConnected ? 'var(--success-border)' : 'var(--border-default)'}`,
                         display: 'flex', alignItems: 'center', justifyContent: 'center',
                         color: isConnected ? conn.iconColor : 'var(--text-secondary)',
-                        transition: 'all 0.18s ease',
+                        transition: 'all var(--transition-base)',
+                        boxShadow: '0 2px 4px rgba(0,0,0,0.02)',
                       }}>
                         {conn.icon}
                       </div>
@@ -505,23 +495,24 @@ export default function SettingsPage() {
                       {/* Name + Badges + Description */}
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                          <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-primary)' }}>{conn.name}</span>
+                          <span style={{ fontSize: 15, fontWeight: 700, color: 'var(--text-primary)' }}>{conn.name}</span>
 
                           {/* Auth method badge */}
                           <span style={{
-                            fontSize: 10, fontWeight: 600,
-                            padding: '2px 7px', borderRadius: 10,
+                            fontSize: 10, fontWeight: 700,
+                            padding: '2px 8px', borderRadius: 12,
                             backgroundColor: authCfg.bg, color: authCfg.color, border: `1px solid ${authCfg.border}`,
-                            letterSpacing: '0.2px',
+                            textTransform: 'uppercase', letterSpacing: '0.2px',
                           }}>
                             {authCfg.label}
                           </span>
 
                           {conn.badge && (
                             <span style={{
-                              fontSize: 10, fontWeight: 600,
-                              padding: '2px 7px', borderRadius: 10,
-                              backgroundColor: '#FFFBEB', color: '#92400E', border: '1px solid #FDE68A',
+                              fontSize: 10, fontWeight: 700,
+                              padding: '2px 8px', borderRadius: 12,
+                              backgroundColor: 'var(--warning-light)', color: 'var(--warning)', border: '1px solid var(--warning-border)',
+                              textTransform: 'uppercase', letterSpacing: '0.2px',
                             }}>
                               {conn.badge}
                             </span>
@@ -529,62 +520,66 @@ export default function SettingsPage() {
 
                           {conn.webhookSupport && (
                             <span style={{
-                              fontSize: 10, fontWeight: 600,
-                              padding: '2px 7px', borderRadius: 10,
-                              backgroundColor: '#F5F3FF', color: '#6D28D9', border: '1px solid #DDD6FE',
+                              fontSize: 10, fontWeight: 700,
+                              padding: '2px 8px', borderRadius: 12,
+                              backgroundColor: 'var(--accent-light)', color: 'var(--accent)', border: '1px solid var(--accent-border)',
+                              textTransform: 'uppercase', letterSpacing: '0.2px',
                             }}>
                               ⚡ Real-time
                             </span>
                           )}
                         </div>
-                        <p style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 4, lineHeight: 1.55 }}>
+                        <p style={{ fontSize: 13, color: 'var(--text-secondary)', marginTop: 6, lineHeight: 1.55 }}>
                           {conn.description}
                         </p>
                       </div>
 
                       {/* Right side: status + buttons */}
-                      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 8, flexShrink: 0 }}>
+                      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 10, flexShrink: 0 }}>
                         {/* Status dot */}
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                           <div style={{
-                            width: 7, height: 7, borderRadius: '50%',
+                            width: 8, height: 8, borderRadius: '50%',
                             backgroundColor: isConnected ? 'var(--success)' : 'var(--border-medium)',
-                            boxShadow: isConnected ? '0 0 0 2px #F0FDF4' : 'none',
+                            boxShadow: isConnected ? '0 0 0 2px var(--success-light)' : 'none',
                           }} />
-                          <span style={{ fontSize: 11.5, fontWeight: 500, color: isConnected ? 'var(--success)' : 'var(--text-muted)' }}>
+                          <span style={{ fontSize: 12, fontWeight: 700, color: isConnected ? 'var(--success)' : 'var(--text-muted)' }}>
                             {isConnected ? 'Connected' : 'Disconnected'}
                           </span>
                         </div>
 
                         {/* Action buttons */}
                         {isConnected ? (
-                          <div style={{ display: 'flex', gap: 6 }}>
+                          <div style={{ display: 'flex', gap: 8 }}>
                             <button
                               onClick={() => disconnect(conn.id)}
                               style={{
-                                padding: '6px 12px', borderRadius: 6, fontSize: 12, fontWeight: 500, cursor: 'pointer',
+                                padding: '6px 12px', borderRadius: 8, fontSize: 12.5, fontWeight: 600, cursor: 'pointer',
                                 border: '1px solid var(--border-default)',
                                 backgroundColor: 'var(--bg-surface)',
                                 color: 'var(--text-secondary)',
-                                transition: 'all 0.12s ease',
+                                transition: 'all var(--transition-fast)',
                               }}
                               onMouseEnter={(e) => {
                                 (e.currentTarget as HTMLElement).style.borderColor = 'var(--danger)';
                                 (e.currentTarget as HTMLElement).style.color = 'var(--danger)';
+                                (e.currentTarget as HTMLElement).style.backgroundColor = 'var(--danger-light)';
                               }}
                               onMouseLeave={(e) => {
                                 (e.currentTarget as HTMLElement).style.borderColor = 'var(--border-default)';
                                 (e.currentTarget as HTMLElement).style.color = 'var(--text-secondary)';
+                                (e.currentTarget as HTMLElement).style.backgroundColor = 'var(--bg-surface)';
                               }}
                             >
                               Disconnect
                             </button>
                             <button style={{
-                              padding: '6px 12px', borderRadius: 6, fontSize: 12, fontWeight: 500, cursor: 'pointer',
+                              padding: '8px 10px', borderRadius: 8, fontSize: 12.5, fontWeight: 600, cursor: 'pointer',
                               border: '1px solid var(--border-default)',
                               backgroundColor: 'var(--bg-surface)', color: 'var(--text-secondary)',
+                              display: 'flex', alignItems: 'center', justifyContent: 'center'
                             }}>
-                              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ display: 'block' }}>
+                              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
                                 <circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
                               </svg>
                             </button>
@@ -594,12 +589,12 @@ export default function SettingsPage() {
                             onClick={() => conn.badge === 'Coming Soon' ? null : openModal(conn.id)}
                             disabled={conn.badge === 'Coming Soon'}
                             style={{
-                              padding: '7px 16px', borderRadius: 6, fontSize: 12.5, fontWeight: 600, 
+                              padding: '8px 16px', borderRadius: 8, fontSize: 13, fontWeight: 700, 
                               cursor: conn.badge === 'Coming Soon' ? 'not-allowed' : 'pointer',
-                              border: `1px solid ${conn.badge === 'Coming Soon' ? 'var(--border-medium)' : 'var(--accent)'}`,
+                              border: `1px solid ${conn.badge === 'Coming Soon' ? 'var(--border-default)' : 'var(--accent)'}`,
                               backgroundColor: conn.badge === 'Coming Soon' ? 'var(--bg-surface)' : 'var(--accent)', 
-                              color: conn.badge === 'Coming Soon' ? 'var(--text-muted)' : 'white',
-                              transition: 'all 0.12s ease',
+                              color: conn.badge === 'Coming Soon' ? 'var(--text-placeholder)' : 'white',
+                              transition: 'all var(--transition-fast)',
                             }}
                             onMouseEnter={(e) => {
                               if (conn.badge !== 'Coming Soon') (e.currentTarget as HTMLElement).style.backgroundColor = 'var(--accent-hover)';
@@ -617,28 +612,29 @@ export default function SettingsPage() {
                     {/* ── Row 2: Connected metadata ── */}
                     {isConnected && (
                       <div style={{
-                        marginTop: 12,
-                        paddingTop: 12,
+                        marginTop: 14,
+                        paddingTop: 14,
                         borderTop: '1px solid var(--border-light)',
                         display: 'flex',
                         gap: 24,
                         alignItems: 'center',
+                        flexWrap: 'wrap',
                       }}>
                         <div>
-                          <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>Last sync: </span>
-                          <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-secondary)' }}>{conn.lastSync}</span>
+                          <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Last sync: </span>
+                          <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)' }}>{conn.lastSync}</span>
                         </div>
                         <div>
-                          <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>Documents ingested: </span>
-                          <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-secondary)' }}>{conn.docsIngested}</span>
+                          <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Documents ingested: </span>
+                          <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)' }}>{conn.docsIngested}</span>
                         </div>
                         <div>
-                          <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>Auth: </span>
-                          <span style={{ fontSize: 11, fontWeight: 600, color: authCfg.color }}>{authCfg.label}</span>
+                          <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Auth: </span>
+                          <span style={{ fontSize: 12, fontWeight: 600, color: authCfg.color }}>{authCfg.label}</span>
                         </div>
                         <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 12 }}>
                           {syncingState[conn.id]?.active && (
-                            <div style={{ fontSize: 11, color: 'var(--accent)', fontWeight: 500, display: 'flex', alignItems: 'center', gap: 6 }}>
+                            <div style={{ fontSize: 12, color: 'var(--accent)', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 6 }}>
                               <svg className="animate-spin" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ animation: 'spin 1s linear infinite' }}>
                                 <path d="M21 12a9 9 0 1 1-6.219-8.56" />
                               </svg>
@@ -649,18 +645,15 @@ export default function SettingsPage() {
                             onClick={() => handleSync(conn.id)}
                             disabled={syncingState[conn.id]?.active}
                             style={{
-                              padding: '4px 10px', borderRadius: 5, fontSize: 11, fontWeight: 500, 
+                              padding: '5px 12px', borderRadius: 6, fontSize: 12, fontWeight: 700, 
                               cursor: syncingState[conn.id]?.active ? 'not-allowed' : 'pointer',
-                              border: `1px solid ${syncingState[conn.id]?.active ? 'var(--border-medium)' : 'var(--success-border)'}`, 
+                              border: `1px solid ${syncingState[conn.id]?.active ? 'var(--border-default)' : 'var(--success-border)'}`, 
                               backgroundColor: syncingState[conn.id]?.active ? 'var(--bg-surface)' : 'var(--success-light)', 
                               color: syncingState[conn.id]?.active ? 'var(--text-muted)' : 'var(--success)',
-                              transition: 'all 0.2s ease',
+                              transition: 'all var(--transition-fast) ease',
                           }}>
                             {syncingState[conn.id]?.active ? 'Syncing...' : 'Sync Now'}
                           </button>
-                          <style dangerouslySetInnerHTML={{__html: `
-                            @keyframes spin { 100% { transform: rotate(360deg); } }
-                          `}} />
                         </div>
                       </div>
                     )}
@@ -673,21 +666,22 @@ export default function SettingsPage() {
       })}
 
       {/* ── Global Data Providers ── */}
-      <div style={{ marginBottom: 32 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
-          <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-secondary)', letterSpacing: '0.8px' }}>
+      <div style={{ marginBottom: 36 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
+          <span style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--text-secondary)', letterSpacing: '0.8px', textTransform: 'uppercase' }}>
             GLOBAL DATA PROVIDERS
           </span>
           <div style={{ flex: 1, height: 1, backgroundColor: 'var(--border-light)' }} />
         </div>
 
-        <div className="surface" style={{ padding: '18px 20px', boxShadow: 'var(--shadow-xs)' }}>
-          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 14 }}>
+        <div className="premium-card hover-lift" style={{ padding: '20px' }}>
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 16 }}>
             {/* Icon */}
             <div style={{
-              width: 42, height: 42, borderRadius: 10, flexShrink: 0,
+              width: 44, height: 44, borderRadius: 10, flexShrink: 0,
               backgroundColor: '#F3E8FF', border: '1px solid #D8B4FE',
               display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#9333EA',
+              boxShadow: '0 2px 4px rgba(0,0,0,0.02)',
             }}>
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20" />
@@ -695,34 +689,36 @@ export default function SettingsPage() {
             </div>
 
             <div style={{ flex: 1 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-primary)' }}>CourtListener API</span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                <span style={{ fontSize: 15, fontWeight: 700, color: 'var(--text-primary)' }}>CourtListener API</span>
                 <span style={{
-                  fontSize: 10, fontWeight: 600, padding: '2px 7px', borderRadius: 10,
-                  backgroundColor: '#F0FDF4', color: '#16A34A', border: '1px solid #BBF7D0',
+                  fontSize: 10, fontWeight: 700, padding: '2px 8px', borderRadius: 12,
+                  backgroundColor: 'var(--success-light)', color: 'var(--success)', border: '1px solid var(--success-border)',
+                  textTransform: 'uppercase', letterSpacing: '0.2px',
                 }}>
                   Active
                 </span>
                 <span style={{
-                  fontSize: 10, fontWeight: 600, padding: '2px 7px', borderRadius: 10,
-                  backgroundColor: '#EFF6FF', color: '#2563EB', border: '1px solid #BFDBFE',
+                  fontSize: 10, fontWeight: 700, padding: '2px 8px', borderRadius: 12,
+                  backgroundColor: 'var(--info-light)', color: 'var(--info)', border: '1px solid var(--info-border)',
+                  textTransform: 'uppercase', letterSpacing: '0.2px',
                 }}>
                   Public Data
                 </span>
               </div>
-              <p style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 4, lineHeight: 1.55 }}>
+              <p style={{ fontSize: 13, color: 'var(--text-secondary)', marginTop: 6, lineHeight: 1.55 }}>
                 Provides real-time access to millions of US Federal and State court opinions. This integration operates globally using a master API key and does not require user authentication.
               </p>
             </div>
 
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 8, flexShrink: 0 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                 <div style={{
-                  width: 7, height: 7, borderRadius: '50%',
+                  width: 8, height: 8, borderRadius: '50%',
                   backgroundColor: 'var(--success)',
-                  boxShadow: '0 0 0 2px #F0FDF4',
+                  boxShadow: '0 0 0 2px var(--success-light)',
                 }} />
-                <span style={{ fontSize: 11.5, fontWeight: 500, color: 'var(--success)' }}>
+                <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--success)' }}>
                   Connected
                 </span>
               </div>
@@ -732,21 +728,22 @@ export default function SettingsPage() {
       </div>
 
       {/* ── Local Vault Storage ── */}
-      <div style={{ marginBottom: 32 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
-          <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-secondary)', letterSpacing: '0.8px' }}>
+      <div style={{ marginBottom: 36 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
+          <span style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--text-secondary)', letterSpacing: '0.8px', textTransform: 'uppercase' }}>
             LOCAL VAULT
           </span>
           <div style={{ flex: 1, height: 1, backgroundColor: 'var(--border-light)' }} />
         </div>
 
-        <div className="surface" style={{ padding: '18px 20px', boxShadow: 'var(--shadow-xs)' }}>
-          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 14 }}>
+        <div className="premium-card hover-lift" style={{ padding: '20px' }}>
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 16 }}>
             {/* Icon */}
             <div style={{
-              width: 42, height: 42, borderRadius: 10, flexShrink: 0,
-              backgroundColor: '#F0FDF4', border: '1px solid var(--success-border)',
-              display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#16A34A',
+              width: 44, height: 44, borderRadius: 10, flexShrink: 0,
+              backgroundColor: 'var(--success-light)', border: '1px solid var(--success-border)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--success)',
+              boxShadow: '0 2px 4px rgba(0,0,0,0.02)',
             }}>
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
                 <rect width="20" height="8" x="2" y="2" rx="2" ry="2" />
@@ -757,49 +754,54 @@ export default function SettingsPage() {
             </div>
 
             <div style={{ flex: 1 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-primary)' }}>Local Document Vault</span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                <span style={{ fontSize: 15, fontWeight: 700, color: 'var(--text-primary)' }}>Local Document Vault</span>
                 <span style={{
-                  fontSize: 10, fontWeight: 600, padding: '2px 7px', borderRadius: 10,
-                  backgroundColor: '#F0FDF4', color: '#16A34A', border: '1px solid #BBF7D0',
+                  fontSize: 10, fontWeight: 700, padding: '2px 8px', borderRadius: 12,
+                  backgroundColor: 'var(--success-light)', color: 'var(--success)', border: '1px solid var(--success-border)',
+                  textTransform: 'uppercase', letterSpacing: '0.2px',
                 }}>
                   Active
                 </span>
               </div>
-              <p style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 4, lineHeight: 1.55 }}>
+              <p style={{ fontSize: 13, color: 'var(--text-secondary)', marginTop: 6, lineHeight: 1.55 }}>
                 All ingested documents are stored on your local machine. Raw files are preserved exactly as received — no modifications.
               </p>
 
               {/* Vault path display */}
               <div style={{
-                marginTop: 12, display: 'flex', alignItems: 'center', gap: 8,
-                padding: '9px 12px', borderRadius: 7,
+                marginTop: 14, display: 'flex', alignItems: 'center', gap: 10,
+                padding: '10px 14px', borderRadius: 8,
                 backgroundColor: 'var(--bg-base)', border: '1px solid var(--border-default)',
               }}>
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
                   <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
                 </svg>
-                <code style={{ fontSize: 12, color: 'var(--text-primary)', flex: 1 }}>
+                <code style={{ fontSize: 12.5, color: 'var(--text-primary)', flex: 1, fontFamily: 'monospace' }}>
                   C:\Users\vinay\.cluco\vault\
                 </code>
                 <button style={{
-                  padding: '3px 10px', borderRadius: 5, fontSize: 11, fontWeight: 500, cursor: 'pointer',
+                  padding: '4px 10px', borderRadius: 6, fontSize: 11.5, fontWeight: 600, cursor: 'pointer',
                   border: '1px solid var(--border-default)', backgroundColor: 'var(--bg-surface)', color: 'var(--text-secondary)',
-                }}>
+                  transition: 'all var(--transition-fast)',
+                }}
+                onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'var(--bg-hover)'}
+                onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'var(--bg-surface)'}
+                >
                   Change
                 </button>
               </div>
 
               {/* Storage stats */}
-              <div style={{ marginTop: 12, display: 'flex', gap: 20 }}>
+              <div style={{ marginTop: 14, display: 'flex', gap: 24 }}>
                 {[
                   { label: 'Raw documents', value: '247 files' },
                   { label: 'Storage used', value: '1.4 GB' },
                   { label: 'Vault structure', value: 'Category / Urgency' },
                 ].map((s) => (
                   <div key={s.label}>
-                    <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-primary)' }}>{s.value}</div>
-                    <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 1 }}>{s.label}</div>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)' }}>{s.value}</div>
+                    <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2, fontWeight: 500 }}>{s.label}</div>
                   </div>
                 ))}
               </div>
@@ -809,15 +811,15 @@ export default function SettingsPage() {
       </div>
 
       {/* ── General Settings ── */}
-      <div style={{ marginBottom: 32 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
-          <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-secondary)', letterSpacing: '0.8px' }}>
+      <div style={{ marginBottom: 36 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
+          <span style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--text-secondary)', letterSpacing: '0.8px', textTransform: 'uppercase' }}>
             GENERAL
           </span>
           <div style={{ flex: 1, height: 1, backgroundColor: 'var(--border-light)' }} />
         </div>
 
-        <div className="surface" style={{ overflow: 'hidden', boxShadow: 'var(--shadow-xs)' }}>
+        <div className="premium-card" style={{ overflow: 'hidden' }}>
           {[
             { label: 'Pipeline Scan Interval', desc: 'How often connected cloud sources are polled as a fallback.', value: 'Every 15 min' },
             { label: 'Minimum OCR Confidence', desc: 'Documents below this threshold are flagged for human review.', value: '70%' },
@@ -825,20 +827,25 @@ export default function SettingsPage() {
             { label: 'Deduplication Method', desc: 'Algorithm used to detect duplicate documents across sources.', value: 'SHA-256' },
           ].map((item, i, arr) => (
             <div key={item.label} style={{
-              padding: '15px 20px',
+              padding: '16px 20px',
               display: 'flex', alignItems: 'center', justifyContent: 'space-between',
               borderBottom: i < arr.length - 1 ? '1px solid var(--border-light)' : 'none',
+              gap: 16
             }}>
               <div>
-                <div style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--text-primary)' }}>{item.label}</div>
-                <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>{item.desc}</div>
+                <div style={{ fontSize: 14.5, fontWeight: 700, color: 'var(--text-primary)' }}>{item.label}</div>
+                <div style={{ fontSize: 12.5, color: 'var(--text-muted)', marginTop: 3 }}>{item.desc}</div>
               </div>
               <div style={{
-                fontSize: 12.5, fontWeight: 600, color: 'var(--accent)',
-                padding: '4px 12px', borderRadius: 6,
+                fontSize: 12.5, fontWeight: 700, color: 'var(--accent)',
+                padding: '6px 14px', borderRadius: 20,
                 backgroundColor: 'var(--accent-light)', border: '1px solid var(--accent-border)',
                 cursor: 'pointer', flexShrink: 0,
-              }}>
+                transition: 'all var(--transition-fast)'
+              }}
+              onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'var(--accent-hover-light)'}
+              onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'var(--accent-light)'}
+              >
                 {item.value}
               </div>
             </div>
@@ -853,34 +860,34 @@ export default function SettingsPage() {
         <div
           style={{
             position: 'fixed', inset: 0, zIndex: 100,
-            backgroundColor: 'rgba(0,0,0,0.35)',
+            backgroundColor: 'rgba(9,9,11,0.35)',
             display: 'flex', alignItems: 'center', justifyContent: 'center',
             padding: 20,
-            backdropFilter: 'blur(2px)',
+            backdropFilter: 'blur(4px)',
           }}
           onClick={(e) => { if (e.target === e.currentTarget) closeModal(); }}
         >
           <div style={{
             backgroundColor: 'var(--bg-surface)',
-            borderRadius: 14,
+            borderRadius: 16,
             width: '100%',
             maxWidth: activeConn.authMethod === 'apikey' ? 500 : 460,
-            boxShadow: '0 20px 60px rgba(0,0,0,0.18)',
+            boxShadow: 'var(--shadow-premium), 0 0 0 1px rgba(0,0,0,0.05)',
             overflow: 'hidden',
           }}>
 
             {/* Modal Header */}
-            <div style={{ padding: '20px 24px', borderBottom: '1px solid var(--border-light)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <div style={{ padding: '20px 24px', borderBottom: '1px solid var(--border-default)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
                 <div style={{ width: 36, height: 36, borderRadius: 8, backgroundColor: 'var(--bg-base)', border: '1px solid var(--border-default)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-secondary)' }}>
                   {activeConn.icon}
                 </div>
                 <div>
-                  <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--text-primary)' }}>Connect {activeConn.name}</div>
-                  <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{activeConn.provider}</div>
+                  <div style={{ fontSize: 15.5, fontWeight: 800, color: 'var(--text-primary)' }}>Connect {activeConn.name}</div>
+                  <div style={{ fontSize: 11.5, color: 'var(--text-muted)', fontFamily: 'monospace' }}>{activeConn.provider}</div>
                 </div>
               </div>
-              <button onClick={closeModal} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', fontSize: 20, lineHeight: 1, padding: 4 }}>×</button>
+              <button onClick={closeModal} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', fontSize: 22, lineHeight: 1, padding: 4 }}>×</button>
             </div>
 
             {/* Modal Body */}
@@ -896,30 +903,30 @@ export default function SettingsPage() {
                     border: `1px solid ${authMethodConfig[activeConn.authMethod].border}`,
                     marginBottom: 18,
                   }}>
-                    <div style={{ fontSize: 12, fontWeight: 600, color: authMethodConfig[activeConn.authMethod].color, marginBottom: 3 }}>
+                    <div style={{ fontSize: 12.5, fontWeight: 700, color: authMethodConfig[activeConn.authMethod].color, marginBottom: 4, textTransform: 'uppercase', letterSpacing: '0.3px' }}>
                       {authMethodConfig[activeConn.authMethod].label}
                     </div>
-                    <div style={{ fontSize: 11.5, color: 'var(--text-secondary)', lineHeight: 1.5 }}>
+                    <div style={{ fontSize: 12, color: 'var(--text-secondary)', lineHeight: 1.5 }}>
                       {authMethodConfig[activeConn.authMethod].description}
                     </div>
                   </div>
 
                   {/* Scopes */}
                   <div style={{ marginBottom: 20 }}>
-                    <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 10, textTransform: 'uppercase', letterSpacing: '0.6px' }}>
+                    <div style={{ fontSize: 11.5, fontWeight: 750, color: 'var(--text-secondary)', marginBottom: 10, textTransform: 'uppercase', letterSpacing: '0.6px' }}>
                       Permissions Requested
                     </div>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                       {activeConn.scopes?.map((scope) => (
                         <div key={scope.label} style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
-                          <div style={{ width: 20, height: 20, borderRadius: '50%', backgroundColor: '#F0FDF4', border: '1px solid #BBF7D0', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginTop: 1 }}>
-                            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#16A34A" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                          <div style={{ width: 18, height: 18, borderRadius: '50%', backgroundColor: 'var(--success-light)', border: '1px solid var(--success-border)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginTop: 1 }}>
+                            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="var(--success)" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round">
                               <polyline points="20 6 9 17 4 12" />
                             </svg>
                           </div>
                           <div>
-                            <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-primary)', fontFamily: 'monospace' }}>{scope.label}</div>
-                            <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 1 }}>{scope.description}</div>
+                            <div style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--text-primary)', fontFamily: 'monospace' }}>{scope.label}</div>
+                            <div style={{ fontSize: 11.5, color: 'var(--text-muted)', marginTop: 1 }}>{scope.description}</div>
                           </div>
                         </div>
                       ))}
@@ -928,48 +935,73 @@ export default function SettingsPage() {
 
                   {activeConn.webhookSupport && (
                     <div style={{
-                      padding: '10px 12px', borderRadius: 7,
-                      backgroundColor: '#F5F3FF', border: '1px solid #DDD6FE',
+                      padding: '10px 12px', borderRadius: 8,
+                      backgroundColor: 'var(--accent-light)', border: '1px solid var(--accent-border)',
                       marginBottom: 20,
-                      fontSize: 11.5, color: '#6D28D9', lineHeight: 1.5,
+                      fontSize: 12, color: 'var(--accent)', lineHeight: 1.55,
                     }}>
                       ⚡ <strong>Webhook URL</strong> will be registered automatically after authorization. Documents appear in your pipeline in real-time.
                     </div>
                   )}
 
-                  <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 18, lineHeight: 1.6 }}>
-                    You will be redirected to <strong>{activeConn.name}</strong> to complete authorization. Cluco never stores your password.
+                  <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 18, lineHeight: 1.6 }}>
+                    Select your preferred connection method:
                   </div>
 
-                  <button
-                    onClick={() => handleOAuthConnect(activeConn.id)}
-                    disabled={simulatingOAuth}
-                    style={{
-                      width: '100%', padding: '11px', borderRadius: 8, border: 'none',
-                      backgroundColor: simulatingOAuth ? 'var(--border-default)' : 'var(--accent)',
-                      color: 'white', fontSize: 13.5, fontWeight: 600, cursor: simulatingOAuth ? 'not-allowed' : 'pointer',
-                      display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
-                      transition: 'background-color 0.15s ease',
-                    }}
-                  >
-                    {simulatingOAuth ? (
-                      <>
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ animation: 'spin 1s linear infinite' }}>
-                          <path d="M21 12a9 9 0 1 1-6.219-8.56" />
-                        </svg>
-                        Authorizing via {activeConn.name}...
-                      </>
-                    ) : (
-                      <>
-                        Authorize with {activeConn.name}
-                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                          <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
-                          <polyline points="15 3 21 3 21 9" />
-                          <line x1="10" y1="14" x2="21" y2="3" />
-                        </svg>
-                      </>
-                    )}
-                  </button>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                    {/* Live OAuth Redirect */}
+                    <button
+                      onClick={() => {
+                        if (OAUTH_ROUTES[activeConn.id]) {
+                          window.location.href = OAUTH_ROUTES[activeConn.id];
+                        } else {
+                          setToast({ type: 'error', message: 'Live OAuth is not configured for MyCase in this developer build.' });
+                        }
+                      }}
+                      style={{
+                        width: '100%', padding: '12px', borderRadius: 8, border: '1px solid var(--border-default)',
+                        backgroundColor: 'var(--bg-surface)',
+                        color: 'var(--text-primary)', fontSize: 13.5, fontWeight: 700, cursor: 'pointer',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+                        transition: 'background-color var(--transition-fast) ease',
+                      }}
+                      onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'var(--bg-base)'}
+                      onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'var(--bg-surface)'}
+                    >
+                      Authorize via {activeConn.name} (Live OAuth)
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
+                        <polyline points="15 3 21 3 21 9" />
+                        <line x1="10" y1="14" x2="21" y2="3" />
+                      </svg>
+                    </button>
+
+                    {/* Simulator Connection Mode */}
+                    <button
+                      onClick={() => handleSimulateConnect(activeConn.id)}
+                      disabled={simulatingOAuth}
+                      style={{
+                        width: '100%', padding: '12px', borderRadius: 8, border: 'none',
+                        backgroundColor: simulatingOAuth ? 'var(--border-default)' : 'var(--accent)',
+                        color: 'white', fontSize: 13.5, fontWeight: 700, cursor: simulatingOAuth ? 'not-allowed' : 'pointer',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+                        transition: 'background-color var(--transition-fast) ease',
+                      }}
+                      onMouseEnter={(e) => { if (!simulatingOAuth) e.currentTarget.style.backgroundColor = 'var(--accent-hover)'; }}
+                      onMouseLeave={(e) => { if (!simulatingOAuth) e.currentTarget.style.backgroundColor = 'var(--accent)'; }}
+                    >
+                      {simulatingOAuth ? (
+                        <>
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ animation: 'spin 1s linear infinite' }}>
+                            <path d="M21 12a9 9 0 1 1-6.219-8.56" />
+                          </svg>
+                          Connecting to Simulator...
+                        </>
+                      ) : (
+                        'Connect in Simulator Mode (Offline Demo)'
+                      )}
+                    </button>
+                  </div>
                 </>
               )}
 
@@ -978,18 +1010,18 @@ export default function SettingsPage() {
                 <>
                   <div style={{
                     padding: '12px 14px', borderRadius: 8,
-                    backgroundColor: '#FFFBEB', border: '1px solid #FDE68A', marginBottom: 20,
+                    backgroundColor: 'var(--warning-light)', border: '1px solid var(--warning-border)', marginBottom: 20,
                   }}>
-                    <div style={{ fontSize: 12, fontWeight: 600, color: '#D97706', marginBottom: 3 }}>IAM Minimum Privilege Required</div>
-                    <div style={{ fontSize: 11.5, color: 'var(--text-secondary)', lineHeight: 1.5 }}>
-                      Create a dedicated IAM user with only <code style={{ backgroundColor: '#FEF9C3', padding: '1px 4px', borderRadius: 3 }}>s3:GetObject</code> and <code style={{ backgroundColor: '#FEF9C3', padding: '1px 4px', borderRadius: 3 }}>s3:ListBucket</code> on your bucket. Never use root account keys.
+                    <div style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--warning)', marginBottom: 4, textTransform: 'uppercase', letterSpacing: '0.3px' }}>IAM Minimum Privilege Required</div>
+                    <div style={{ fontSize: 12, color: 'var(--text-secondary)', lineHeight: 1.5 }}>
+                      Create a dedicated IAM user with only <code style={{ backgroundColor: 'var(--bg-surface)', padding: '1px 4px', borderRadius: 3, border: '1px solid var(--warning-border)' }}>s3:GetObject</code> and <code style={{ backgroundColor: 'var(--bg-surface)', padding: '1px 4px', borderRadius: 3, border: '1px solid var(--warning-border)' }}>s3:ListBucket</code> on your bucket. Never use root account keys.
                     </div>
                   </div>
 
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 14, marginBottom: 18 }}>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 16, marginBottom: 20 }}>
                     {activeConn.fields?.map((field) => (
                       <div key={field.key}>
-                        <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 5 }}>
+                        <label style={{ display: 'block', fontSize: 12.5, fontWeight: 700, color: 'var(--text-secondary)', marginBottom: 6 }}>
                           {field.label}
                         </label>
                         <input
@@ -998,17 +1030,17 @@ export default function SettingsPage() {
                           value={formValues[field.key] || ''}
                           onChange={(e) => setFormValues((prev) => ({ ...prev, [field.key]: e.target.value }))}
                           style={{
-                            width: '100%', padding: '9px 12px', borderRadius: 7,
-                            border: '1px solid var(--border-default)', backgroundColor: 'var(--bg-base)',
+                            width: '100%', padding: '10px 12px', borderRadius: 8,
+                            border: '1px solid var(--border-medium)', backgroundColor: 'var(--bg-surface)',
                             fontSize: 13, color: 'var(--text-primary)', outline: 'none',
                             fontFamily: field.type === 'password' ? 'monospace' : 'inherit',
-                            transition: 'border-color 0.12s ease',
+                            transition: 'border-color var(--transition-fast) ease',
                           }}
-                          onFocus={(e) => (e.currentTarget.style.borderColor = 'var(--accent-mid)')}
-                          onBlur={(e) => (e.currentTarget.style.borderColor = 'var(--border-default)')}
+                          onFocus={(e) => (e.currentTarget.style.borderColor = 'var(--accent)')}
+                          onBlur={(e) => (e.currentTarget.style.borderColor = 'var(--border-medium)')}
                         />
                         {field.help && (
-                          <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>{field.help}</div>
+                          <div style={{ fontSize: 11.5, color: 'var(--text-muted)', marginTop: 4 }}>{field.help}</div>
                         )}
                       </div>
                     ))}
@@ -1017,25 +1049,32 @@ export default function SettingsPage() {
                   {/* Test result */}
                   {testResult && (
                     <div style={{
-                      padding: '10px 12px', borderRadius: 7, marginBottom: 14,
-                      backgroundColor: testResult === 'success' ? '#F0FDF4' : '#FEF2F2',
-                      border: `1px solid ${testResult === 'success' ? '#BBF7D0' : '#FECACA'}`,
-                      fontSize: 12, fontWeight: 500,
-                      color: testResult === 'success' ? '#16A34A' : '#DC2626',
+                      padding: '12px 14px', borderRadius: 8, marginBottom: 16,
+                      backgroundColor: testResult === 'success' ? 'var(--success-light)' : 'var(--danger-light)',
+                      border: `1px solid ${testResult === 'success' ? 'var(--success-border)' : 'var(--danger-border)'}`,
+                      fontSize: 12.5, fontWeight: 700,
+                      color: testResult === 'success' ? 'var(--success)' : 'var(--danger)',
                       display: 'flex', alignItems: 'center', gap: 8,
                     }}>
                       {testResult === 'success' ? '✓ Connection successful! Bucket is reachable with the provided credentials.' : '✗ Connection failed. Check your credentials and bucket name.'}
                     </div>
                   )}
 
-                  <div style={{ display: 'flex', gap: 10 }}>
+                  <div style={{ display: 'flex', gap: 12 }}>
                     <button
                       onClick={handleTestConnection}
                       disabled={testingConnection}
                       style={{
-                        flex: 1, padding: '10px', borderRadius: 7, border: '1px solid var(--border-medium)',
+                        flex: 1, padding: '11px', borderRadius: 8, border: '1px solid var(--border-medium)',
                         backgroundColor: 'var(--bg-surface)', color: 'var(--text-secondary)',
-                        fontSize: 13, fontWeight: 600, cursor: testingConnection ? 'not-allowed' : 'pointer',
+                        fontSize: 13.5, fontWeight: 700, cursor: testingConnection ? 'not-allowed' : 'pointer',
+                        transition: 'all var(--transition-fast)',
+                      }}
+                      onMouseEnter={(e) => {
+                        if (!testingConnection) e.currentTarget.style.backgroundColor = 'var(--bg-hover)';
+                      }}
+                      onMouseLeave={(e) => {
+                        if (!testingConnection) e.currentTarget.style.backgroundColor = 'var(--bg-surface)';
                       }}
                     >
                       {testingConnection ? 'Testing...' : 'Test Connection'}
@@ -1044,11 +1083,17 @@ export default function SettingsPage() {
                       onClick={() => handleApiKeySave(activeConn.id)}
                       disabled={testResult !== 'success'}
                       style={{
-                        flex: 1, padding: '10px', borderRadius: 7, border: 'none',
+                        flex: 1, padding: '11px', borderRadius: 8, border: 'none',
                         backgroundColor: testResult === 'success' ? 'var(--accent)' : 'var(--border-default)',
-                        color: testResult === 'success' ? 'white' : 'var(--text-muted)',
-                        fontSize: 13, fontWeight: 600, cursor: testResult === 'success' ? 'pointer' : 'not-allowed',
-                        transition: 'all 0.15s ease',
+                        color: testResult === 'success' ? 'white' : 'var(--text-placeholder)',
+                        fontSize: 13.5, fontWeight: 700, cursor: testResult === 'success' ? 'pointer' : 'not-allowed',
+                        transition: 'all var(--transition-fast) ease',
+                      }}
+                      onMouseEnter={(e) => {
+                        if (testResult === 'success') e.currentTarget.style.backgroundColor = 'var(--accent-hover)';
+                      }}
+                      onMouseLeave={(e) => {
+                        if (testResult === 'success') e.currentTarget.style.backgroundColor = 'var(--accent)';
                       }}
                     >
                       Save & Connect
@@ -1069,5 +1114,17 @@ export default function SettingsPage() {
         }
       `}</style>
     </div>
+  );
+}
+
+export default function SettingsPage() {
+  return (
+    <Suspense fallback={
+      <div style={{ padding: '40px 48px', maxWidth: 1000, margin: '0 auto', color: 'var(--text-secondary)' }}>
+        Loading settings...
+      </div>
+    }>
+      <SettingsPageContent />
+    </Suspense>
   );
 }

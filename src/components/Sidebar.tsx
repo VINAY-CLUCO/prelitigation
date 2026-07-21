@@ -1,5 +1,6 @@
 'use client';
 
+import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 
@@ -74,6 +75,37 @@ const navItems = [
 
 export default function Sidebar() {
   const pathname = usePathname();
+  const [statsData, setStatsData] = useState({ totalDocs: 0, processedDocs: 0, pendingJobsCount: 0 });
+
+  useEffect(() => {
+    const loadStats = () => {
+      fetch('/api/cms/stats')
+        .then(res => res.json())
+        .then(data => {
+          setStatsData({
+            totalDocs: data.totalDocs || 0,
+            processedDocs: data.processedDocs || 0,
+            pendingJobsCount: data.pendingJobsCount || 0
+          });
+        })
+        .catch(() => {});
+    };
+    loadStats();
+    const interval = setInterval(loadStats, 4000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const percent = statsData.totalDocs > 0 
+    ? Math.round((statsData.processedDocs / statsData.totalDocs) * 100) 
+    : 0;
+
+  // Active Phase text mapping
+  let activePhaseText = 'Phase 1 — Connect & Collect';
+  if (statsData.pendingJobsCount > 0) {
+    activePhaseText = 'Phase 2 — Extract & Normalize';
+  } else if (statsData.totalDocs > 0 && percent === 100) {
+    activePhaseText = 'Phase 4 — Case Attribution';
+  }
 
   return (
     <aside
@@ -89,55 +121,56 @@ export default function Sidebar() {
         flexDirection: 'column',
         zIndex: 50,
         userSelect: 'none',
+        boxShadow: '2px 0 8px rgba(15, 23, 42, 0.01)',
       }}
     >
       {/* ── Logo ── */}
       <div
         style={{
-          padding: '18px 20px',
+          padding: '20px 24px',
           borderBottom: '1px solid var(--border-light)',
           display: 'flex',
           alignItems: 'center',
-          gap: 10,
+          gap: 12,
         }}
       >
         <div
           style={{
-            width: 34,
-            height: 34,
-            backgroundColor: 'var(--accent)',
-            borderRadius: 9,
+            width: 36,
+            height: 36,
+            background: 'linear-gradient(135deg, var(--accent) 0%, var(--accent-mid) 100%)',
+            borderRadius: 10,
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
             flexShrink: 0,
-            boxShadow: '0 1px 3px rgba(30,58,95,0.3)',
+            boxShadow: '0 4px 12px rgba(79, 70, 229, 0.25)',
           }}
         >
-          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
             <path d="M12 22s-8-4.5-8-11.8A8 8 0 0 1 12 2a8 8 0 0 1 8 8.2c0 7.3-8 11.8-8 11.8z" />
             <path d="m9 12 2 2 4-4" />
           </svg>
         </div>
         <div>
-          <div style={{ fontWeight: 700, fontSize: 15, color: 'var(--text-primary)', letterSpacing: '-0.4px', lineHeight: 1.2 }}>
+          <div style={{ fontWeight: 800, fontSize: 16, color: 'var(--text-primary)', letterSpacing: '-0.5px', lineHeight: 1.1 }}>
             Cluco
           </div>
-          <div style={{ fontSize: 10, color: 'var(--text-muted)', fontWeight: 500, letterSpacing: '0.6px', textTransform: 'uppercase', lineHeight: 1.2, marginTop: 1 }}>
+          <div style={{ fontSize: 9.5, color: 'var(--text-muted)', fontWeight: 600, letterSpacing: '0.8px', textTransform: 'uppercase', lineHeight: 1.1, marginTop: 2 }}>
             Pre-Litigation
           </div>
         </div>
       </div>
 
       {/* ── Nav Label ── */}
-      <div style={{ padding: '20px 16px 6px' }}>
-        <span style={{ fontSize: 10, fontWeight: 600, color: 'var(--text-muted)', letterSpacing: '0.9px', textTransform: 'uppercase' }}>
-          Main
+      <div style={{ padding: '24px 24px 8px' }}>
+        <span style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', letterSpacing: '1px', textTransform: 'uppercase' }}>
+          Main Menu
         </span>
       </div>
 
       {/* ── Navigation ── */}
-      <nav style={{ flex: 1, padding: '4px 8px' }}>
+      <nav style={{ flex: 1, padding: '4px 12px' }}>
         {navItems.map((item) => {
           const isActive = pathname === item.href || (item.href !== '/' && pathname.startsWith(item.href));
           return (
@@ -147,17 +180,18 @@ export default function Sidebar() {
               style={{
                 display: 'flex',
                 alignItems: 'center',
-                gap: 9,
-                padding: '8px 10px',
-                borderRadius: 7,
-                marginBottom: 2,
-                fontSize: 13.5,
-                fontWeight: isActive ? 600 : 400,
-                color: isActive ? 'var(--accent)' : 'var(--text-secondary)',
-                backgroundColor: isActive ? 'var(--accent-light)' : 'transparent',
+                gap: 12,
+                padding: '10px 14px',
+                borderRadius: 8,
+                marginBottom: 4,
+                fontSize: 14,
+                fontWeight: isActive ? 600 : 500,
+                color: isActive ? '#FFFFFF' : 'var(--text-secondary)',
+                background: isActive ? 'linear-gradient(135deg, var(--accent) 0%, var(--accent-mid) 100%)' : 'transparent',
                 textDecoration: 'none',
-                transition: 'all 0.13s ease',
-                border: isActive ? '1px solid var(--accent-border)' : '1px solid transparent',
+                transition: 'all var(--transition-base)',
+                boxShadow: isActive ? '0 4px 12px rgba(79, 70, 229, 0.2)' : 'none',
+                border: '1px solid transparent',
               }}
               onMouseEnter={(e) => {
                 if (!isActive) {
@@ -172,7 +206,7 @@ export default function Sidebar() {
                 }
               }}
             >
-              <span style={{ display: 'flex', flexShrink: 0 }}>{item.icon}</span>
+              <span style={{ display: 'flex', flexShrink: 0, opacity: isActive ? 1 : 0.8 }}>{item.icon}</span>
               {item.label}
             </Link>
           );
@@ -180,25 +214,32 @@ export default function Sidebar() {
       </nav>
 
       {/* ── Pipeline Progress ── */}
-      <div style={{ padding: '12px 12px 8px', borderTop: '1px solid var(--border-light)' }}>
+      <div style={{ padding: '16px 16px 12px', borderTop: '1px solid var(--border-light)' }}>
         <div
           style={{
-            padding: '10px 12px',
+            padding: '12px 14px',
             backgroundColor: 'var(--bg-base)',
-            borderRadius: 8,
+            borderRadius: 10,
             border: '1px solid var(--border-default)',
+            boxShadow: 'inset 0 1px 2px rgba(0, 0, 0, 0.01)',
           }}
         >
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
-            <span style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 500 }}>Pipeline Progress</span>
-            <span style={{ fontSize: 11, color: 'var(--accent)', fontWeight: 700 }}>20%</span>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+            <span style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 600 }}>Pipeline Progress</span>
+            <span style={{ fontSize: 11.5, color: 'var(--accent)', fontWeight: 700 }}>{percent}%</span>
           </div>
-          <div style={{ height: 3, backgroundColor: 'var(--border-default)', borderRadius: 10 }}>
-            <div style={{ width: '20%', height: '100%', backgroundColor: 'var(--accent)', borderRadius: 10, transition: 'width 0.6s ease' }} />
+          <div style={{ height: 4, backgroundColor: 'var(--border-medium)', borderRadius: 10, overflow: 'hidden' }}>
+            <div style={{
+              width: `${percent}%`,
+              height: '100%',
+              background: 'linear-gradient(90deg, var(--accent) 0%, var(--accent-mid) 100%)',
+              borderRadius: 10,
+              transition: 'width 0.8s cubic-bezier(0.4, 0, 0.2, 1)',
+            }} />
           </div>
-          <div style={{ marginTop: 5, fontSize: 11, color: 'var(--accent)', fontWeight: 600 }}>Phase 1 — Connect & Collect</div>
+          <div style={{ marginTop: 8, fontSize: 11, color: 'var(--text-primary)', fontWeight: 600 }}>{activePhaseText}</div>
         </div>
-        <div style={{ textAlign: 'center', marginTop: 8, fontSize: 10.5, color: 'var(--text-muted)' }}>
+        <div style={{ textAlign: 'center', marginTop: 10, fontSize: 10, color: 'var(--text-muted)', fontWeight: 500 }}>
           Cluco v0.1.0 · Prototype
         </div>
       </div>
