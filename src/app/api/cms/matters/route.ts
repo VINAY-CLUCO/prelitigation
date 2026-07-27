@@ -7,38 +7,27 @@ import { createClioContact, createClioMatter, updateClioMatterStatus } from '@/l
 export const dynamic = 'force-dynamic';
 
 const CLIO_VAULT = path.join(VAULT_DIR, 'vault', 'clio');
-const MYCASE_VAULT = path.join(VAULT_DIR, 'vault', 'mycase');
 
-// Ensure vault directories exist
-function ensureVaultDirs() {
+// Ensure vault directory exists
+function ensureVaultDir() {
   if (!fs.existsSync(CLIO_VAULT)) {
     fs.mkdirSync(CLIO_VAULT, { recursive: true });
-  }
-  if (!fs.existsSync(MYCASE_VAULT)) {
-    fs.mkdirSync(MYCASE_VAULT, { recursive: true });
   }
 }
 
 export async function GET() {
-  ensureVaultDirs();
+  ensureVaultDir();
   
   const clioToken = getToken('clio');
-  const mycaseToken = getToken('mycase');
-
   const clioMatters = getLocalMatters(CLIO_VAULT, 'clio');
-  const mycaseMatters = getLocalMatters(MYCASE_VAULT, 'mycase');
-
-  // Combine matters from both providers
-  const allMatters = [...clioMatters, ...mycaseMatters];
 
   // Sort by open date descending
-  allMatters.sort((a, b) => new Date(b.open_date).getTime() - new Date(a.open_date).getTime());
+  clioMatters.sort((a, b) => new Date(b.open_date).getTime() - new Date(a.open_date).getTime());
 
   return NextResponse.json({
-    matters: allMatters,
+    matters: clioMatters,
     connections: {
       clio: !!clioToken?.access_token,
-      mycase: !!mycaseToken?.access_token
     }
   });
 }
@@ -46,43 +35,35 @@ export async function GET() {
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const { clientName, clientEmail, clientPhone, matterDescription, provider = 'clio' } = body;
+    const { clientName, clientEmail, clientPhone, matterDescription } = body;
 
     if (!clientName || !matterDescription) {
       return NextResponse.json({ error: 'Client Name and Matter Description are required.' }, { status: 400 });
     }
 
-    const token = getToken(provider);
+    const token = getToken('clio');
     let finalMatterId = String(Date.now());
-    let displayNum = `${provider === 'clio' ? 'CLO' : 'MYC'}-${Math.floor(100000 + Math.random() * 900000)}`;
+    let displayNum = `CLO-${Math.floor(100000 + Math.random() * 900000)}`;
     let clientData = { id: Date.now(), name: clientName };
 
-    // 1. If connected live, call respective provider APIs
+    // If connected live, call Clio API
     if (token?.access_token) {
-      if (provider === 'clio') {
-        try {
-          const contact = await createClioContact(clientName, clientEmail, clientPhone);
-          const matter = await createClioMatter(matterDescription, contact.id);
-          
-          finalMatterId = String(matter.id);
-          displayNum = matter.display_number || displayNum;
-          clientData = { id: contact.id, name: contact.name };
-        } catch (err: any) {
-          console.error('[Clio Live Create Error]', err);
-          return NextResponse.json({ error: `Clio API Error: ${err.message}` }, { status: 502 });
-        }
-      } else if (provider === 'mycase') {
-        // MyCase Live Create Flow Mock (simulate successful MyCase API response)
-        finalMatterId = `mc_${Date.now()}`;
-        displayNum = `MYC-${Math.floor(100000 + Math.random() * 900000)}`;
-        clientData = { id: Date.now(), name: clientName };
+      try {
+        const contact = await createClioContact(clientName, clientEmail, clientPhone);
+        const matter = await createClioMatter(matterDescription, contact.id);
+        
+        finalMatterId = String(matter.id);
+        displayNum = matter.display_number || displayNum;
+        clientData = { id: contact.id, name: contact.name };
+      } catch (err: any) {
+        console.error('[Clio Live Create Error]', err);
+        return NextResponse.json({ error: `Clio API Error: ${err.message}` }, { status: 502 });
       }
     }
 
-    // 2. Write locally inside the provider's vault folder
-    ensureVaultDirs();
-    const providerVault = provider === 'clio' ? CLIO_VAULT : MYCASE_VAULT;
-    const newMatterDir = path.join(providerVault, finalMatterId);
+    // Write locally
+    ensureVaultDir();
+    const newMatterDir = path.join(CLIO_VAULT, finalMatterId);
     
     if (!fs.existsSync(newMatterDir)) {
       fs.mkdirSync(newMatterDir, { recursive: true });
@@ -107,7 +88,7 @@ export async function POST(request: Request) {
       success: true,
       matter: {
         ...matterMetadata,
-        provider,
+        provider: 'clio',
         documents: [],
         tasks: [],
         calendar: []
@@ -122,15 +103,14 @@ export async function POST(request: Request) {
 export async function PATCH(request: Request) {
   try {
     const body = await request.json();
-    const { matterId, status, provider = 'clio' } = body;
+    const { matterId, status } = body;
 
     if (!matterId || !status) {
       return NextResponse.json({ error: 'Matter ID and Status are required.' }, { status: 400 });
     }
 
-    ensureVaultDirs();
-    const providerVault = provider === 'clio' ? CLIO_VAULT : MYCASE_VAULT;
-    const matterDir = path.join(providerVault, matterId);
+    ensureVaultDir();
+    const matterDir = path.join(CLIO_VAULT, matterId);
     const matterFile = path.join(matterDir, 'matter.json');
 
     if (!fs.existsSync(matterFile)) {
@@ -138,8 +118,6 @@ export async function PATCH(request: Request) {
     }
 
     const matterMetadata = JSON.parse(fs.readFileSync(matterFile, 'utf-8'));
-    
-    // Normalize status (capitalized for local vault, e.g. 'Open', 'Closed', 'Pending')
     const normalizedStatus = status.charAt(0).toUpperCase() + status.slice(1).toLowerCase();
     
     matterMetadata.status = normalizedStatus;
@@ -149,9 +127,9 @@ export async function PATCH(request: Request) {
       matterMetadata.close_date = null;
     }
 
-    // 1. If connected live and provider is Clio, update via API
-    const token = getToken(provider);
-    if (token?.access_token && provider === 'clio') {
+    // Update via Clio API if live
+    const token = getToken('clio');
+    if (token?.access_token) {
       try {
         await updateClioMatterStatus(matterId, normalizedStatus);
       } catch (err: any) {
@@ -160,7 +138,6 @@ export async function PATCH(request: Request) {
       }
     }
 
-    // 2. Save updated metadata locally
     fs.writeFileSync(matterFile, JSON.stringify(matterMetadata, null, 2));
 
     return NextResponse.json({
@@ -173,8 +150,8 @@ export async function PATCH(request: Request) {
   }
 }
 
-// Scans a specific vault directory and returns all parsed matters
-function getLocalMatters(vaultPath: string, provider: 'clio' | 'mycase') {
+// Scans the Clio vault directory and returns all parsed matters
+function getLocalMatters(vaultPath: string, provider: 'clio') {
   const matters = [];
   if (fs.existsSync(vaultPath)) {
     const folders = fs.readdirSync(vaultPath);

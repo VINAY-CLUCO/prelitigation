@@ -12,7 +12,13 @@ export async function POST(request: Request) {
   startQueueWorker();
 
   try {
-    const payload = await request.json();
+    let payload: any;
+    try {
+      payload = await request.json();
+    } catch {
+      // Empty or invalid JSON is common for simple webhook pings from some providers
+      return NextResponse.json({ status: 'ignored', message: 'No JSON body' });
+    }
     const tokenRecord = getToken('clio');
     
     if (!tokenRecord?.access_token) {

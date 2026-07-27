@@ -114,7 +114,7 @@ export async function POST(request: Request) {
     const isFullyUploaded = patchData?.data?.latest_document_version?.fully_uploaded;
     console.log('[Upload] fully_uploaded confirmed:', isFullyUploaded);
 
-    // ── STEP 4: Write to local Vault documents.json ──────────────────────────
+    // ── STEP 4: Write to local Vault documents.json & save physical binary ────
     try {
       const { VAULT_DIR } = require('@/lib/tokenStore');
       const fs = require('fs');
@@ -128,6 +128,13 @@ export async function POST(request: Request) {
         fs.mkdirSync(matterDir, { recursive: true });
       }
 
+      const safeName = file.name.replace(/[^a-zA-Z0-9.\-_]/g, '_');
+      const localFilePath = path.join(matterDir, `${docId}_${safeName}`);
+      const directFilePath = path.join(matterDir, safeName);
+      
+      fs.writeFileSync(localFilePath, buffer);
+      fs.writeFileSync(directFilePath, buffer);
+
       let documents = [];
       if (fs.existsSync(docsFile)) {
         documents = JSON.parse(fs.readFileSync(docsFile, 'utf-8'));
@@ -139,7 +146,9 @@ export async function POST(request: Request) {
           id: docId,
           name: file.name,
           size: file.size,
-          ai_tag: 'Ingested File'
+          ai_tag: 'Ingested File',
+          downloaded: true,
+          downloaded_at: new Date().toISOString()
         });
         fs.writeFileSync(docsFile, JSON.stringify(documents, null, 2));
       }

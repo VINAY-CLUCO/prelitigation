@@ -14,8 +14,8 @@ export async function GET(request: Request) {
 
   const token = getToken(provider);
   
-  // We require active connection tokens for real OAuth systems
-  if (!token && provider !== 'mycase') {
+  // Require active connection token for all providers
+  if (!token) {
     return NextResponse.json({ error: `${provider} is not connected.` }, { status: 401 });
   }
 
@@ -27,8 +27,8 @@ export async function GET(request: Request) {
   // Create a ReadableStream to pipe Server-Sent Events back to settings page
   const stream = new ReadableStream({
     async start(controller) {
-      const sendEvent = (msg: string, docsIngested?: number, done = false) => {
-        const payload = JSON.stringify({ msg, docsIngested, done });
+      const sendEvent = (msg: string, docsIngested?: number, done = false, paused = false) => {
+        const payload = JSON.stringify({ msg, docsIngested, done, paused });
         controller.enqueue(encoder.encode(`data: ${payload}\n\n`));
       };
 
@@ -40,6 +40,10 @@ export async function GET(request: Request) {
 
         // Poll queue store for updates
         while (true) {
+          if (request.signal.aborted) {
+            console.log(`[${provider} Sync] Client disconnected. Stream aborted.`);
+            break;
+          }
           await new Promise((resolve) => setTimeout(resolve, 800));
 
           const queue = await readQueue();
@@ -63,8 +67,10 @@ export async function GET(request: Request) {
           // Emit progress events
           if (activeJob.progress) {
             sendEvent(
-              activeJob.progress.msg || `Syncing files...`,
-              activeJob.progress.completed
+              activeJob.isPaused ? `Paused...` : (activeJob.progress.msg || `Syncing files...`),
+              activeJob.progress.completed,
+              false,
+              activeJob.isPaused
             );
           } else {
             sendEvent('Task pending in queue...', 0);

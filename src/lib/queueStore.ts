@@ -27,6 +27,7 @@ export interface QueueJob<T = any> {
   maxRetries: number;
   error: string | null;
   progress: JobProgress | null;
+  isPaused?: boolean;
   runAfter: number; // Timestamp after which the job can run
   createdAt: string;
   updatedAt: string;
@@ -92,6 +93,7 @@ export async function addJob<T = any>(
     maxRetries: options?.maxRetries ?? 3,
     error: null,
     progress: null,
+    isPaused: false,
     runAfter: Date.now(),
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
@@ -187,3 +189,54 @@ export async function pruneQueue(maxAgeHours = 24): Promise<void> {
 
   await writeQueue(filtered);
 }
+
+export async function pauseJob(id: string): Promise<void> {
+  const jobs = await readQueue();
+  const job = jobs.find((j) => j.id === id);
+  if (job) {
+    job.isPaused = true;
+    job.updatedAt = new Date().toISOString();
+    await writeQueue(jobs);
+  }
+}
+
+export async function resumeJob(id: string): Promise<void> {
+  const jobs = await readQueue();
+  const job = jobs.find((j) => j.id === id);
+  if (job) {
+    job.isPaused = false;
+    job.updatedAt = new Date().toISOString();
+    await writeQueue(jobs);
+  }
+}
+
+export async function isJobPaused(id: string): Promise<boolean> {
+  const jobs = await readQueue();
+  const job = jobs.find((j) => j.id === id);
+  return job ? !!job.isPaused : false;
+}
+
+/**
+ * Cancel all pending/processing jobs whose `type` starts with the given provider prefix.
+ * Called on disconnect so the sidebar immediately stops showing "Syncing".
+ */
+export async function cancelJobsByProvider(provider: string): Promise<number> {
+  const jobs = await readQueue();
+  let cancelled = 0;
+  const prefix = provider.toLowerCase();
+  for (const job of jobs) {
+    if (
+      (job.status === 'pending' || job.status === 'processing') &&
+      job.type.toLowerCase().startsWith(prefix)
+    ) {
+      job.status = 'failed';
+      job.error = `Cancelled: provider ${provider} was disconnected.`;
+      job.progress = { percent: 0, completed: 0, total: 1, msg: 'Cancelled by disconnect.' };
+      job.updatedAt = new Date().toISOString();
+      cancelled++;
+    }
+  }
+  if (cancelled > 0) await writeQueue(jobs);
+  return cancelled;
+}
+

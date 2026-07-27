@@ -8,7 +8,7 @@ import { startQueueWorker } from '@/lib/queueWorker';
 
 export const dynamic = 'force-dynamic';
 
-export async function GET() {
+export async function GET(request: Request) {
   const token = getToken('clio');
   if (!token) {
     return NextResponse.json({ error: 'Clio is not connected.' }, { status: 401 });
@@ -34,6 +34,10 @@ export async function GET() {
 
         // 2. Poll queue store for job updates and stream them over the SSE connection
         while (true) {
+          if (request.signal.aborted) {
+            console.log('[Clio Sync] Client disconnected. Stream aborted.');
+            break;
+          }
           await new Promise((resolve) => setTimeout(resolve, 800));
 
           const queue = await readQueue();

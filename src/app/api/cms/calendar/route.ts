@@ -5,17 +5,9 @@ import { VAULT_DIR, getToken } from '@/lib/tokenStore';
 import { createClioCalendarEvent } from '@/lib/clioPush';
 
 const CLIO_VAULT = path.join(VAULT_DIR, 'vault', 'clio');
-const MYCASE_VAULT = path.join(VAULT_DIR, 'vault', 'mycase');
 
-function getMatterPath(matterId: string | number): { dir: string; provider: 'clio' | 'mycase' } {
-  const clioPath = path.join(CLIO_VAULT, String(matterId));
-  const mycasePath = path.join(MYCASE_VAULT, String(matterId));
-
-  if (fs.existsSync(mycasePath)) {
-    return { dir: mycasePath, provider: 'mycase' };
-  }
-  // Default to clio
-  return { dir: clioPath, provider: 'clio' };
+function getMatterDir(matterId: string | number): string {
+  return path.join(CLIO_VAULT, String(matterId));
 }
 
 export async function POST(request: Request) {
@@ -27,26 +19,21 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Matter ID, Summary, and Start Date are required.' }, { status: 400 });
     }
 
-    const { dir: matterDir, provider } = getMatterPath(matterId);
-    const token = getToken(provider);
+    const matterDir = getMatterDir(matterId);
+    const token = getToken('clio');
     let finalEventId = String(Date.now());
 
-    // 1. If connected live, push to respective API
+    // Push to Clio API if live token present
     if (token?.access_token) {
-      if (provider === 'clio') {
-        try {
-          const clioEvent = await createClioCalendarEvent(matterId, summary, startAt);
-          finalEventId = String(clioEvent.id);
-        } catch (err: any) {
-          console.error('[Clio Live Create Event Error]', err);
-        }
-      } else if (provider === 'mycase') {
-        // Mock MyCase event ID response
-        finalEventId = `mce_${Date.now()}`;
+      try {
+        const clioEvent = await createClioCalendarEvent(matterId, summary, startAt);
+        finalEventId = String(clioEvent.id);
+      } catch (err: any) {
+        console.error('[Clio Live Create Event Error]', err);
       }
     }
 
-    // 2. Append event locally
+    // Append event locally
     const calendarFile = path.join(matterDir, 'calendar.json');
     let events = [];
 
@@ -61,6 +48,7 @@ export async function POST(request: Request) {
     };
 
     events.push(newEvent);
+    if (!fs.existsSync(matterDir)) fs.mkdirSync(matterDir, { recursive: true });
     fs.writeFileSync(calendarFile, JSON.stringify(events, null, 2));
 
     return NextResponse.json({ success: true, event: newEvent });

@@ -5,17 +5,9 @@ import { VAULT_DIR, getToken } from '@/lib/tokenStore';
 import { createClioTask, completeClioTask } from '@/lib/clioPush';
 
 const CLIO_VAULT = path.join(VAULT_DIR, 'vault', 'clio');
-const MYCASE_VAULT = path.join(VAULT_DIR, 'vault', 'mycase');
 
-function getMatterPath(matterId: string | number): { dir: string; provider: 'clio' | 'mycase' } {
-  const clioPath = path.join(CLIO_VAULT, String(matterId));
-  const mycasePath = path.join(MYCASE_VAULT, String(matterId));
-
-  if (fs.existsSync(mycasePath)) {
-    return { dir: mycasePath, provider: 'mycase' };
-  }
-  // Default to clio
-  return { dir: clioPath, provider: 'clio' };
+function getMatterDir(matterId: string | number): string {
+  return path.join(CLIO_VAULT, String(matterId));
 }
 
 export async function POST(request: Request) {
@@ -27,26 +19,21 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Matter ID and Task Name are required.' }, { status: 400 });
     }
 
-    const { dir: matterDir, provider } = getMatterPath(matterId);
-    const token = getToken(provider);
+    const matterDir = getMatterDir(matterId);
+    const token = getToken('clio');
     let finalTaskId = String(Date.now());
 
-    // 1. If connected live, push to respective API
+    // Push to Clio API if live token present
     if (token?.access_token) {
-      if (provider === 'clio') {
-        try {
-          const clioTask = await createClioTask(matterId, name, dueAt);
-          finalTaskId = String(clioTask.id);
-        } catch (err: any) {
-          console.error('[Clio Live Create Task Error]', err);
-        }
-      } else if (provider === 'mycase') {
-        // Mock MyCase task creation response ID
-        finalTaskId = `mct_${Date.now()}`;
+      try {
+        const clioTask = await createClioTask(matterId, name, dueAt);
+        finalTaskId = String(clioTask.id);
+      } catch (err: any) {
+        console.error('[Clio Live Create Task Error]', err);
       }
     }
 
-    // 2. Append task locally
+    // Append task locally
     const tasksFile = path.join(matterDir, 'tasks.json');
     let tasks = [];
 
@@ -62,6 +49,7 @@ export async function POST(request: Request) {
     };
 
     tasks.push(newTask);
+    if (!fs.existsSync(matterDir)) fs.mkdirSync(matterDir, { recursive: true });
     fs.writeFileSync(tasksFile, JSON.stringify(tasks, null, 2));
 
     return NextResponse.json({ success: true, task: newTask });
@@ -80,21 +68,19 @@ export async function PATCH(request: Request) {
       return NextResponse.json({ error: 'Matter ID and Task ID are required.' }, { status: 400 });
     }
 
-    const { dir: matterDir, provider } = getMatterPath(matterId);
-    const token = getToken(provider);
+    const matterDir = getMatterDir(matterId);
+    const token = getToken('clio');
 
-    // 1. If connected live, update respective API
+    // Update Clio API if live token present
     if (token?.access_token) {
-      if (provider === 'clio') {
-        try {
-          await completeClioTask(taskId, complete);
-        } catch (err: any) {
-          console.error('[Clio Live Complete Task Error]', err);
-        }
+      try {
+        await completeClioTask(taskId, complete);
+      } catch (err: any) {
+        console.error('[Clio Live Complete Task Error]', err);
       }
     }
 
-    // 2. Update task locally
+    // Update task locally
     const tasksFile = path.join(matterDir, 'tasks.json');
 
     if (fs.existsSync(tasksFile)) {

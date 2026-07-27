@@ -10,9 +10,16 @@ import { readQueue } from '@/lib/queueStore';
 export const dynamic = 'force-dynamic';
 
 const CLIO_VAULT = path.join(VAULT_DIR, 'vault', 'clio');
-const MYCASE_VAULT = path.join(VAULT_DIR, 'vault', 'mycase');
+
+let cachedStats: { timestamp: number; payload: any } | null = null;
+const CACHE_TTL_MS = 2000;
 
 export async function GET() {
+  const now = Date.now();
+  if (cachedStats && (now - cachedStats.timestamp < CACHE_TTL_MS)) {
+    return NextResponse.json(cachedStats.payload);
+  }
+
   const queue = await readQueue();
   
   let totalDocs = 0;
@@ -40,13 +47,17 @@ export async function GET() {
             }
             
             documentsList.push({
+              id: d.id || '',
               name: d.name,
               type: d.ai_tag || 'Document 📄',
               source: source,
               date: d.downloaded_at ? new Date(d.downloaded_at).toLocaleString() : 'Just now',
               downloadedAtRaw: d.downloaded_at || '',
               status: isFlagged ? 'flagged' : 'complete',
-              size: d.size ? `${(d.size / 1024).toFixed(0)} KB` : '120 KB'
+              size: d.size ? `${(d.size / 1024).toFixed(0)} KB` : '120 KB',
+              emailSender: d.emailSender || null,
+              emailSubject: d.emailSubject || null,
+              matterId: folder // Only applicable for nested vaults like Clio
             });
           }
         } catch {}
@@ -71,22 +82,24 @@ export async function GET() {
           }
           
           documentsList.push({
+            id: d.id || '',
             name: d.name,
             type: d.ai_tag || 'Document 📄',
             source: source,
             date: d.downloaded_at ? new Date(d.downloaded_at).toLocaleString() : 'Just now',
             downloadedAtRaw: d.downloaded_at || '',
             status: isFlagged ? 'flagged' : 'complete',
-            size: d.size ? `${(d.size / 1024).toFixed(0)} KB` : '120 KB'
+            size: d.size ? `${(d.size / 1024).toFixed(0)} KB` : '120 KB',
+            emailSender: d.emailSender || null,
+            emailSubject: d.emailSubject || null
           });
         }
       } catch {}
     }
   };
 
-  // Scan case managers
+  // Scan case managers (Clio only)
   scanVault(CLIO_VAULT, 'Clio Manage');
-  scanVault(MYCASE_VAULT, 'MyCase');
 
   // Scan cloud drives and mail archives
   scanDirectVault(path.join(VAULT_DIR, 'vault', 'gdrive'), 'Google Drive');
@@ -107,7 +120,6 @@ export async function GET() {
     // Choose appropriate colors
     const colors: Record<string, string> = {
       CLIO: '#4F46E5',
-      MYCASE: '#0EA5E9',
       GDRIVE: '#16A34A',
       DROPBOX: '#0061FF',
       ONEDRIVE: '#0078D4',
@@ -138,12 +150,15 @@ export async function GET() {
     return timeB - timeA;
   });
 
-  return NextResponse.json({
+  const responsePayload = {
     totalDocs,
     processedDocs,
     flaggedDocs,
     pendingJobsCount,
-    recentDocs: documentsList.slice(0, 50), // Show up to 50 items so no file is lost in long lists
+    recentDocs: documentsList.slice(0, 50),
     eventLogs: eventLogs.slice(0, 15)
-  });
+  };
+
+  cachedStats = { timestamp: now, payload: responsePayload };
+  return NextResponse.json(responsePayload);
 }

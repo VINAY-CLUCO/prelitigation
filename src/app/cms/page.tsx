@@ -30,7 +30,7 @@ interface Matter {
   display_number: string;
   description: string;
   status: string;
-  provider: 'clio' | 'mycase';
+  provider: 'clio';
   client?: { id: number | string; name: string };
   open_date: string;
   close_date: string | null;
@@ -52,11 +52,10 @@ export default function MatterCMSDashboard() {
   // Timeline type filter: 'all' | 'document' | 'task' | 'calendar'
   const [timelineFilter, setTimelineFilter] = useState<'all' | 'document' | 'task' | 'calendar'>('all');
 
-  // Global provider filter: 'all' | 'clio' | 'mycase'
-  const [providerFilter, setProviderFilter] = useState<'all' | 'clio' | 'mycase'>('all');
+  const [providerFilter, setProviderFilter] = useState<'all' | 'clio'>('all');
 
   // Connection states
-  const [connections, setConnections] = useState<Record<string, boolean>>({ clio: false, mycase: false });
+  const [connections, setConnections] = useState<Record<string, boolean>>({ clio: false });
 
   // Search
   const [searchQuery, setSearchQuery] = useState('');
@@ -64,7 +63,7 @@ export default function MatterCMSDashboard() {
   // Matter Onboarding Modal
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [createTab, setCreateTab] = useState<'ai' | 'manual'>('manual');
-  const [targetProvider, setTargetProvider] = useState<'clio' | 'mycase'>('clio');
+  const [targetProvider, setTargetProvider] = useState<'clio'>('clio');
   const [clientName, setClientName] = useState('');
   const [clientEmail, setClientEmail] = useState('');
   const [clientPhone, setClientPhone] = useState('');
@@ -99,7 +98,7 @@ export default function MatterCMSDashboard() {
         if (data) { 
           const list: Matter[] = data.matters || [];
           setMatters(list); 
-          setConnections(data.connections || { clio: false, mycase: false });
+          setConnections(data.connections || { clio: false });
           // Auto-select first matter in Master-Detail layout
           if (list.length > 0) {
             setSelectedMatterId(list[0].id.toString());
@@ -161,7 +160,7 @@ export default function MatterCMSDashboard() {
         type: 'creation',
         title: 'Case File Onboarded',
         date: new Date(selectedMatter.open_date),
-        description: `Matter was registered in ${selectedMatter.provider === 'clio' ? 'Clio Manage' : 'MyCase'}.`
+        description: 'Matter was registered in Clio Manage.'
       });
     }
 
@@ -337,7 +336,7 @@ export default function MatterCMSDashboard() {
     try {
       const selectedMatter = matters.find((m: any) => m.id.toString() === matterId);
       const provider = selectedMatter?.provider || 'clio';
-      const uploadUrl = provider === 'mycase' ? '/api/connections/mycase/upload' : '/api/connections/clio/upload';
+      const uploadUrl = '/api/connections/clio/upload';
 
       const res = await fetch(uploadUrl, {
         method: 'POST',
@@ -507,7 +506,6 @@ export default function MatterCMSDashboard() {
               {[
                 { id: 'all', label: 'All Cases' },
                 { id: 'clio', label: 'Clio Manage' },
-                { id: 'mycase', label: 'MyCase' }
               ].map(tab => (
                 <button
                   key={tab.id}
@@ -561,7 +559,7 @@ export default function MatterCMSDashboard() {
                             fontSize: 10, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.5px',
                             color: matter.provider === 'clio' ? 'var(--accent)' : 'var(--info)'
                           }}>
-                            {matter.provider === 'clio' ? 'Clio' : 'MyCase'}
+                            {'Clio'}
                           </span>
                           <span style={{
                             fontSize: 9.5, fontWeight: 700, padding: '2px 6px', borderRadius: 4,
@@ -612,7 +610,7 @@ export default function MatterCMSDashboard() {
                       color: selectedMatter.provider === 'clio' ? 'var(--accent)' : 'var(--info)',
                       border: selectedMatter.provider === 'clio' ? '1px solid var(--accent-border)' : '1px solid var(--info-border)'
                     }}>
-                      {selectedMatter.provider === 'clio' ? 'Clio Manage' : 'MyCase'}
+                      {'Clio Manage'}
                     </span>
                     <span style={{ fontSize: 13, color: 'var(--text-muted)', fontWeight: 500 }}>Onboarded: {selectedMatter.open_date}</span>
                   </div>
@@ -643,7 +641,7 @@ export default function MatterCMSDashboard() {
                         });
                         if (!res.ok) {
                           const data = await res.json();
-                          alert(data.error || 'Failed to update status on server');
+                          alert(data.error || 'Failed to update matter status.');
                           setMatters(previousMatters);
                         }
                       } catch {
@@ -722,7 +720,7 @@ export default function MatterCMSDashboard() {
                       onClick={() => document.getElementById(`detail-upload`)?.click()}
                     >
                       <span style={{ fontSize: 13.5, fontWeight: 700, color: dragActive ? 'var(--accent)' : 'var(--text-primary)' }}>
-                        {uploading ? `Uploading to ${selectedMatter.provider === 'clio' ? 'Clio' : 'MyCase'} (${uploadProgress}%)...` : `+ Drag or Click to upload case documents`}
+                        {uploading ? `Uploading to Clio (${uploadProgress}%)...` : `+ Drag or Click to upload case documents`}
                       </span>
                       <input id='detail-upload' type="file" style={{ display: 'none' }} onChange={(e) => { if (e.target.files?.[0]) handleFileUpload(e.target.files[0], selectedMatterId!); }} />
                     </div>
@@ -774,7 +772,7 @@ export default function MatterCMSDashboard() {
                   <div>
                     {/* Tasks list */}
                     {(selectedMatter.tasks || []).length === 0 ? (
-                       <div style={{ textAlign: 'center', padding: '24px 0', color: 'var(--text-muted)', fontSize: 13.5 }}>No action tasks logged. Create one below to sync it to Clio/MyCase.</div>
+                       <div style={{ textAlign: 'center', padding: '24px 0', color: 'var(--text-muted)', fontSize: 13.5 }}>No action tasks logged. Create one below to sync it to Clio.</div>
                     ) : (
                       <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginBottom: 24 }}>
                         {selectedMatter.tasks.map((task) => (
@@ -1052,18 +1050,17 @@ export default function MatterCMSDashboard() {
             <div style={{ padding: '24px 28px', borderBottom: '1px solid var(--border-default)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <div>
                 <h2 style={{ fontSize: 18, fontWeight: 800, color: 'var(--text-primary)', letterSpacing: '-0.3px' }}>Create Legal Case File</h2>
-                <div style={{ fontSize: 12.5, color: 'var(--text-secondary)', marginTop: 2 }}>Create client records and matter folders in Clio or MyCase.</div>
+                <div style={{ fontSize: 12.5, color: 'var(--text-secondary)', marginTop: 2 }}>Create client records and matter folders in Clio Manage.</div>
               </div>
               <button onClick={() => setShowCreateModal(false)} style={{ border: 'none', background: 'none', cursor: 'pointer', fontSize: 22, color: 'var(--text-muted)' }}>×</button>
             </div>
 
             {/* Target CMS Selector */}
             <div style={{ padding: '16px 28px', backgroundColor: 'var(--bg-base)', borderBottom: '1px solid var(--border-default)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <span style={{ fontSize: 11, fontWeight: 800, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.4px' }}>Target System Origin</span>
+              <span style={{ fontSize: 11, fontWeight: 800, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.4px' }}>Target System</span>
               <div style={{ display: 'flex', gap: 8 }}>
                 {[
                   { id: 'clio', label: 'Clio Manage', activeBg: 'var(--accent-light)', activeBorder: 'var(--accent-border)', activeColor: 'var(--accent)' },
-                  { id: 'mycase', label: 'MyCase', activeBg: 'var(--info-light)', activeBorder: 'var(--info-border)', activeColor: 'var(--info)' }
                 ].map((prov) => {
                   const isSel = targetProvider === prov.id;
                   return (
@@ -1187,8 +1184,8 @@ export default function MatterCMSDashboard() {
                   </div>
                   <div style={{ display: 'flex', gap: 12, marginTop: 12 }}>
                     <button type="button" onClick={() => setShowCreateModal(false)} style={{ flex: 1, padding: '12px', borderRadius: 8, border: '1px solid var(--border-medium)', backgroundColor: 'transparent', color: 'var(--text-secondary)', fontWeight: 600, fontSize: 13, cursor: 'pointer' }}>Cancel</button>
-                    <button type="submit" disabled={creatingCase} style={{ flex: 2, padding: '12px', borderRadius: 8, border: 'none', backgroundColor: targetProvider === 'clio' ? 'var(--accent)' : 'var(--info)', color: 'white', fontWeight: 700, fontSize: 13, cursor: 'pointer', transition: 'filter var(--transition-fast)' }}>
-                      {creatingCase ? 'Creating...' : `Onboard to ${targetProvider === 'clio' ? 'Clio' : 'MyCase'}`}
+                    <button type="submit" disabled={creatingCase} style={{ flex: 2, padding: '12px', borderRadius: 8, border: 'none', backgroundColor: 'var(--accent)', color: 'white', fontWeight: 700, fontSize: 13, cursor: 'pointer', transition: 'filter var(--transition-fast)' }}>
+                      {creatingCase ? 'Creating...' : 'Onboard to Clio Manage →'}
                     </button>
                   </div>
                 </form>

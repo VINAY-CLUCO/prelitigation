@@ -1,351 +1,283 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-
-// Dashboard – Home Page
-
-const stats = [
-  {
-    label: 'Total Documents',
-    value: '247',
-    sub: 'Ingested across all sources',
-    icon: (
-      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
-      </svg>
-    ),
-    iconBg: '#EEF2FF',
-    iconColor: '#1E3A5F',
-  },
-  {
-    label: 'Flagged / Incomplete',
-    value: '18',
-    sub: '7.3% of total — needs action',
-    icon: (
-      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
-        <line x1="12" y1="9" x2="12" y2="13" />
-        <line x1="12" y1="17" x2="12.01" y2="17" />
-      </svg>
-    ),
-    iconBg: '#FFFBEB',
-    iconColor: '#D97706',
-  },
-  {
-    label: 'Complete & Processed',
-    value: '201',
-    sub: '81.4% success rate',
-    icon: (
-      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <polyline points="20 6 9 17 4 12" />
-      </svg>
-    ),
-    iconBg: '#F0FDF4',
-    iconColor: '#16A34A',
-  },
-  {
-    label: 'Pending Review',
-    value: '28',
-    sub: '11.3% awaiting attorney',
-    icon: (
-      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <circle cx="12" cy="12" r="10" />
-        <polyline points="12 6 12 12 16 14" />
-      </svg>
-    ),
-    iconBg: '#EEF2FF',
-    iconColor: '#2563EB',
-  },
-];
-
-const phases = [
-  { num: 1, name: 'Connect & Collect', count: 247, status: 'done' },
-  { num: 2, name: 'Extract & Normalize', count: 235, status: 'active' },
-  { num: 3, name: 'Quality Check', count: 219, status: 'pending' },
-  { num: 4, name: 'Case Attribution', count: 0, status: 'pending' },
-  { num: 5, name: 'Package & Deliver', count: 0, status: 'pending' },
-];
-
-const phaseStatusConfig: Record<string, { label: string; color: string; bg: string; border: string }> = {
-  done: { label: 'Complete', color: '#16A34A', bg: '#F0FDF4', border: '#BBF7D0' },
-  active: { label: 'Running', color: '#2563EB', bg: '#EEF2FF', border: '#BFDBFE' },
-  pending: { label: 'Pending', color: '#9B9B9B', bg: '#F7F7F5', border: '#E5E4E0' },
-};
-
-const recentDocs = [
-  { name: 'Police_Report_Johnson_2024.pdf', type: 'Police Report', source: 'Local Upload', date: 'Jun 30, 2026', status: 'complete', phase: 4 },
-  { name: 'Medical_Record_Smith_Mercy.pdf', type: 'Medical Record', source: 'Google Drive', date: 'Jun 30, 2026', status: 'flagged', phase: 3 },
-  { name: 'Witness_Statement_Doe.docx', type: 'Statement', source: 'Gmail', date: 'Jun 29, 2026', status: 'pending', phase: 2 },
-  { name: 'Insurance_Claim_AXA_2024.pdf', type: 'Insurance Doc', source: 'OneDrive', date: 'Jun 29, 2026', status: 'complete', phase: 5 },
-  { name: 'Court_Filing_Case4421.pdf', type: 'Court Filing', source: 'Local Upload', date: 'Jun 28, 2026', status: 'pending', phase: 1 },
-];
-
-const docStatusBadge: Record<string, string> = {
-  complete: 'badge badge-success',
-  flagged: 'badge badge-warning',
-  pending: 'badge badge-neutral',
-  duplicate: 'badge badge-info',
-};
-const docStatusLabel: Record<string, string> = {
-  complete: 'Complete',
-  flagged: 'Flagged',
-  pending: 'Pending',
-  duplicate: 'Duplicate',
-};
+import Link from 'next/link';
 
 export default function DashboardPage() {
   const [data, setData] = useState<any>({
-    totalDocs: 0,
-    processedDocs: 0,
-    flaggedDocs: 0,
-    pendingJobsCount: 0,
-    recentDocs: []
+    totalDocs: 0, processedDocs: 0, flaggedDocs: 0, pendingJobsCount: 0, recentDocs: []
   });
   const [loading, setLoading] = useState(true);
+  const [connections, setConnections] = useState<Record<string, any>>({});
 
   useEffect(() => {
-    fetch('/api/cms/stats')
-      .then(res => res.json())
-      .then(resData => {
-        setData(resData);
-        setLoading(false);
-      })
-      .catch(() => setLoading(false));
+    const load = () => {
+      fetch('/api/cms/stats').then(r => r.json()).then(d => { setData(d); setLoading(false); }).catch(() => setLoading(false));
+      fetch('/api/connections/status').then(r => r.json()).then(setConnections).catch(() => {});
+    };
+    load();
+    const interval = setInterval(load, 6000);
+    return () => clearInterval(interval);
   }, []);
+
+  const connectedList = Object.entries(connections).filter(([, v]: any) => v.connected);
+  const totalPercent = data.totalDocs > 0 ? Math.round((data.processedDocs / data.totalDocs) * 100) : 0;
+  const flaggedPercent = data.totalDocs > 0 ? ((data.flaggedDocs / data.totalDocs) * 100).toFixed(1) : '0';
+
+  const phases = [
+    { num: 1, name: 'Connect', sub: 'Link integrations', status: connectedList.length > 0 ? 'done' : 'active', count: connectedList.length },
+    { num: 2, name: 'Collect', sub: 'Sync documents', status: data.totalDocs > 0 ? 'done' : connectedList.length > 0 ? 'active' : 'pending', count: data.totalDocs },
+    { num: 3, name: 'Analyze', sub: 'AI classification', status: data.pendingJobsCount > 0 ? 'active' : data.processedDocs > 0 ? 'done' : 'pending', count: data.processedDocs },
+    { num: 4, name: 'Review', sub: 'Quality check', status: data.flaggedDocs > 0 ? 'active' : 'pending', count: data.flaggedDocs },
+    { num: 5, name: 'Package', sub: 'Deliver output', status: 'pending', count: 0 },
+  ];
+
+  const docStatusConfig: Record<string, { label: string; color: string; bg: string; border: string }> = {
+    complete: { label: 'Complete', color: '#059669', bg: '#ECFDF5', border: '#A7F3D0' },
+    flagged: { label: 'Flagged', color: '#D97706', bg: '#FFFBEB', border: '#FDE68A' },
+    pending: { label: 'Pending', color: '#6B7280', bg: '#F9FAFB', border: '#E5E7EB' },
+  };
+
+  const sourceIcon: Record<string, string> = {
+    'Google Drive': '🟢', 'Gmail': '🔴', 'Clio Manage': '🟣',
+    'Microsoft OneDrive': '🔵', 'Microsoft Outlook': '🔵', 'Dropbox': '🔷', 'Local Upload': '⚪',
+  };
 
   if (loading) {
     return (
-      <div style={{ padding: '40px 48px', maxWidth: 1200, margin: '0 auto' }}>
-        <div style={{ marginBottom: 36 }}>
-          <div style={{ height: 28, width: 220, backgroundColor: 'var(--border-light)', borderRadius: 6, marginBottom: 10 }} className="animate-pulse" />
-          <div style={{ height: 16, width: 340, backgroundColor: 'var(--border-light)', borderRadius: 4 }} className="animate-pulse" />
+      <div className="page-content">
+        <div className="page-header">
+          <div className="skeleton" style={{ height: 28, width: 200, marginBottom: 10 }} />
+          <div className="skeleton" style={{ height: 16, width: 320 }} />
         </div>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 20, marginBottom: 36 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 16, marginBottom: 28 }}>
           {[1, 2, 3, 4].map(i => (
-            <div key={i} className="premium-card" style={{ height: 130, padding: '24px', display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
-              <div style={{ height: 14, width: '60%', backgroundColor: 'var(--border-light)', borderRadius: 4 }} className="animate-pulse" />
-              <div style={{ height: 32, width: '40%', backgroundColor: 'var(--border-light)', borderRadius: 6 }} className="animate-pulse" />
-              <div style={{ height: 12, width: '80%', backgroundColor: 'var(--border-light)', borderRadius: 4 }} className="animate-pulse" />
-            </div>
+            <div key={i} className="premium-card skeleton" style={{ height: 120 }} />
           ))}
         </div>
-        <div className="premium-card" style={{ height: 160, padding: 28, marginBottom: 36, backgroundColor: 'var(--bg-surface)' }}>
-          <div style={{ height: 16, width: 140, backgroundColor: 'var(--border-light)', borderRadius: 4, marginBottom: 20 }} className="animate-pulse" />
-          <div style={{ display: 'flex', gap: 20 }}>
-            {[1, 2, 3, 4, 5].map(i => (
-              <div key={i} style={{ flex: 1, height: 75, backgroundColor: 'var(--border-light)', borderRadius: 8 }} className="animate-pulse" />
-            ))}
-          </div>
-        </div>
-        <div className="premium-card" style={{ height: 300, padding: 28, backgroundColor: 'var(--bg-surface)' }}>
-          <div style={{ height: 16, width: 180, backgroundColor: 'var(--border-light)', borderRadius: 4, marginBottom: 20 }} className="animate-pulse" />
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-            {[1, 2, 3, 4, 5].map(i => (
-              <div key={i} style={{ height: 36, backgroundColor: 'var(--border-light)', borderRadius: 6 }} className="animate-pulse" />
-            ))}
-          </div>
-        </div>
+        <div className="premium-card skeleton" style={{ height: 100, marginBottom: 28 }} />
+        <div className="premium-card skeleton" style={{ height: 320 }} />
       </div>
     );
   }
 
-  // Map state to dynamic card display values
-  const totalPercent = data.totalDocs > 0 ? ((data.processedDocs / data.totalDocs) * 100).toFixed(1) : '0';
-  const flaggedPercent = data.totalDocs > 0 ? ((data.flaggedDocs / data.totalDocs) * 100).toFixed(1) : '0';
-  
-  const dynamicStats = [
-    {
-      label: 'Total Documents',
-      value: String(data.totalDocs),
-      sub: 'Ingested across active sources',
-      icon: (
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-          <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
-        </svg>
-      ),
-      iconBg: '#EEF2FF',
-      iconColor: '#1E3A5F',
-    },
-    {
-      label: 'Flagged / Incomplete',
-      value: String(data.flaggedDocs),
-      sub: `${flaggedPercent}% of total - needs action`,
-      icon: (
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-          <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
-          <line x1="12" y1="9" x2="12" y2="13" />
-          <line x1="12" y1="17" x2="12.01" y2="17" />
-        </svg>
-      ),
-      iconBg: '#FFFBEB',
-      iconColor: '#D97706',
-    },
-    {
-      label: 'Complete & Processed',
-      value: String(data.processedDocs),
-      sub: `${totalPercent}% processing success rate`,
-      icon: (
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-          <polyline points="20 6 9 17 4 12" />
-        </svg>
-      ),
-      iconBg: '#F0FDF4',
-      iconColor: '#16A34A',
-    },
-    {
-      label: 'Pending In Queue',
-      value: String(data.pendingJobsCount),
-      sub: `${data.pendingJobsCount > 0 ? 'Workers actively processing' : 'Pipeline idle'}`,
-      icon: (
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-          <circle cx="12" cy="12" r="10" />
-          <polyline points="12 6 12 12 16 14" />
-        </svg>
-      ),
-      iconBg: '#EEF2FF',
-      iconColor: '#2563EB',
-    },
-  ];
-
-  // Dynamic Phase mapping
-  const dynamicPhases = [
-    { num: 1, name: 'Connect & Collect', count: data.totalDocs, status: data.totalDocs > 0 ? 'done' : 'pending' },
-    { num: 2, name: 'Extract & Normalize', count: data.processedDocs, status: data.pendingJobsCount > 0 ? 'active' : data.processedDocs > 0 ? 'done' : 'pending' },
-    { num: 3, name: 'Quality Check', count: data.flaggedDocs, status: data.flaggedDocs > 0 ? 'active' : 'pending' },
-    { num: 4, name: 'Case Attribution', count: data.processedDocs, status: data.processedDocs > 0 ? 'done' : 'pending' },
-    { num: 5, name: 'Package & Deliver', count: 0, status: 'pending' },
-  ];
-
   return (
-    <div style={{ padding: '40px 48px', maxWidth: 1200, margin: '0 auto' }}>
+    <div className="page-content">
+
       {/* ── Page Header ── */}
-      <div style={{ marginBottom: 36 }}>
-        <h1 style={{ fontSize: 26, fontWeight: 800, color: 'var(--text-primary)', letterSpacing: '-0.6px', lineHeight: 1.2 }}>
-          Dashboard
-        </h1>
-        <p style={{ marginTop: 6, fontSize: 14.5, color: 'var(--text-secondary)' }}>
-          Welcome back. Here is your pre-litigation pipeline overview.
-        </p>
+      <div className="page-header" style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
+        <div>
+          <h1>Dashboard</h1>
+          <p>Your pre-litigation pipeline at a glance.</p>
+        </div>
+        {connectedList.length === 0 && (
+          <Link href="/settings" className="btn btn-primary" style={{ flexShrink: 0, marginTop: 4 }}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
+              <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
+            </svg>
+            Connect Integrations
+          </Link>
+        )}
       </div>
 
-      {/* ── Stat Cards ── */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 20, marginBottom: 36 }}>
-        {dynamicStats.map((stat) => (
-          <div
-            key={stat.label}
-            className="premium-card hover-lift"
-            style={{ padding: '24px' }}
+      {/* ── Next Action Banner ── */}
+      {connectedList.length === 0 ? (
+        <div style={{
+          padding: '20px 24px',
+          borderRadius: 14,
+          background: 'linear-gradient(135deg, rgba(91,108,248,0.06) 0%, rgba(123,135,250,0.04) 100%)',
+          border: '1px solid var(--accent-border)',
+          marginBottom: 28,
+          display: 'flex',
+          alignItems: 'center',
+          gap: 16,
+        }}>
+          <div style={{
+            width: 44, height: 44, borderRadius: 12,
+            background: 'linear-gradient(135deg, var(--accent), var(--accent-mid))',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+            boxShadow: '0 4px 12px rgba(91,108,248,0.25)',
+          }}>
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="16" /><line x1="8" y1="12" x2="16" y2="12" />
+            </svg>
+          </div>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--text-primary)' }}>Get started — connect your first integration</div>
+            <div style={{ fontSize: 13, color: 'var(--text-muted)', marginTop: 3 }}>Link Clio, Google Drive, Gmail or Outlook to begin pulling documents into the pipeline.</div>
+          </div>
+          <Link href="/settings" style={{
+            padding: '9px 18px',
+            borderRadius: 8,
+            background: 'var(--accent)',
+            color: 'white',
+            fontSize: 13,
+            fontWeight: 700,
+            flexShrink: 0,
+            boxShadow: '0 4px 12px rgba(91,108,248,0.25)',
+            transition: 'all var(--transition-fast)',
+          }}
+            onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--accent-hover)')}
+            onMouseLeave={(e) => (e.currentTarget.style.background = 'var(--accent)')}
           >
-            <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 16 }}>
-              <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-secondary)', letterSpacing: '0.2px' }}>
+            Set up Connections →
+          </Link>
+        </div>
+      ) : data.totalDocs === 0 ? (
+        <div style={{
+          padding: '16px 20px',
+          borderRadius: 12,
+          background: '#FFFBEB',
+          border: '1px solid #FDE68A',
+          marginBottom: 28,
+          display: 'flex',
+          alignItems: 'center',
+          gap: 14,
+        }}>
+          <div style={{ width: 8, height: 8, borderRadius: '50%', background: '#F59E0B', boxShadow: '0 0 0 3px rgba(245,158,11,0.2)', flexShrink: 0 }} />
+          <span style={{ fontSize: 13.5, fontWeight: 600, color: '#92400E' }}>
+            {connectedList.length} integration{connectedList.length > 1 ? 's' : ''} connected — run your first sync to pull in documents.
+          </span>
+          <Link href="/settings" style={{ marginLeft: 'auto', fontSize: 13, fontWeight: 700, color: '#D97706', flexShrink: 0 }}>
+            Sync Now →
+          </Link>
+        </div>
+      ) : null}
+
+      {/* ── Stat Cards ── */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 16, marginBottom: 28 }}>
+        {[
+          {
+            label: 'Total Documents',
+            value: data.totalDocs,
+            sub: `Across ${connectedList.length} connected source${connectedList.length !== 1 ? 's' : ''}`,
+            icon: (
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z" />
+                <polyline points="14 2 14 8 20 8" />
+              </svg>
+            ),
+            iconBg: 'var(--accent-light)', iconColor: 'var(--accent)',
+            trend: null,
+          },
+          {
+            label: 'Processed',
+            value: data.processedDocs,
+            sub: `${totalPercent}% success rate`,
+            icon: (
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="20 6 9 17 4 12" />
+              </svg>
+            ),
+            iconBg: 'var(--success-light)', iconColor: 'var(--success)',
+            trend: totalPercent,
+          },
+          {
+            label: 'Needs Review',
+            value: data.flaggedDocs,
+            sub: `${flaggedPercent}% of total`,
+            icon: (
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
+                <line x1="12" y1="9" x2="12" y2="13" /><line x1="12" y1="17" x2="12.01" y2="17" />
+              </svg>
+            ),
+            iconBg: 'var(--warning-light)', iconColor: 'var(--warning)',
+            trend: null,
+          },
+          {
+            label: 'Active Jobs',
+            value: data.pendingJobsCount,
+            sub: data.pendingJobsCount > 0 ? 'Workers processing now' : 'Pipeline idle',
+            icon: (
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={data.pendingJobsCount > 0 ? { animation: 'spin 2s linear infinite' } : {}}>
+                <path d="M21 12a9 9 0 1 1-6.219-8.56" />
+              </svg>
+            ),
+            iconBg: data.pendingJobsCount > 0 ? '#FFFBEB' : 'var(--bg-base)', iconColor: data.pendingJobsCount > 0 ? '#F59E0B' : 'var(--text-muted)',
+            trend: null,
+          },
+        ].map((stat) => (
+          <div key={stat.label} className="premium-card hover-lift" style={{ padding: '20px 22px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
+              <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-muted)', letterSpacing: '0.3px', textTransform: 'uppercase' }}>
                 {stat.label}
               </span>
-              <div
-                style={{
-                  width: 36,
-                  height: 36,
-                  borderRadius: 10,
-                  backgroundColor: stat.iconBg,
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  color: stat.iconColor,
-                  flexShrink: 0,
-                  boxShadow: '0 2px 6px rgba(0, 0, 0, 0.02)',
-                }}
-              >
+              <div style={{
+                width: 34, height: 34, borderRadius: 9,
+                background: stat.iconBg, color: stat.iconColor,
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+              }}>
                 {stat.icon}
               </div>
             </div>
-            <div style={{ fontSize: 32, fontWeight: 800, color: 'var(--text-primary)', letterSpacing: '-1px', lineHeight: 1 }}>
+            <div style={{ fontSize: 34, fontWeight: 800, color: 'var(--text-primary)', letterSpacing: '-1.5px', lineHeight: 1 }}>
               {stat.value}
             </div>
-            <div style={{ marginTop: 8, fontSize: 12, color: 'var(--text-muted)', fontWeight: 500 }}>
-              {stat.sub}
+            <div style={{ marginTop: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
+              {stat.trend !== null && (stat.trend as number) > 0 && (
+                <span style={{ fontSize: 10, fontWeight: 700, padding: '1px 6px', borderRadius: 20, background: 'var(--success-light)', color: 'var(--success)', border: '1px solid var(--success-border)' }}>
+                  ↑ {stat.trend}%
+                </span>
+              )}
+              <span style={{ fontSize: 12, color: 'var(--text-muted)', fontWeight: 500 }}>{stat.sub}</span>
             </div>
           </div>
         ))}
       </div>
 
       {/* ── Pipeline Phases ── */}
-      <div className="premium-card" style={{ padding: '28px', marginBottom: 36 }}>
-        <div style={{ marginBottom: 20 }}>
-          <h2 style={{ fontSize: 16, fontWeight: 700, color: 'var(--text-primary)', letterSpacing: '-0.3px' }}>
-            Pipeline Phases
-          </h2>
-          <p style={{ fontSize: 13, color: 'var(--text-muted)', marginTop: 4 }}>
-            Track document progress across all 5 phases
-          </p>
+      <div className="premium-card" style={{ padding: '22px 24px', marginBottom: 28 }}>
+        <div style={{ marginBottom: 18, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <div>
+            <h2 style={{ fontSize: 15, fontWeight: 700, color: 'var(--text-primary)', letterSpacing: '-0.3px' }}>Pipeline Phases</h2>
+            <p style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 3 }}>End-to-end document processing workflow</p>
+          </div>
         </div>
-        <div style={{ display: 'flex', gap: 0, alignItems: 'stretch' }}>
-          {dynamicPhases.map((phase, idx) => {
-            const cfg = phaseStatusConfig[phase.status];
+        <div style={{ display: 'flex', alignItems: 'center', gap: 0 }}>
+          {phases.map((phase, idx) => {
             const isDone = phase.status === 'done';
             const isActive = phase.status === 'active';
             return (
               <div key={phase.num} style={{ display: 'flex', alignItems: 'center', flex: 1 }}>
-                <div
-                  style={{
-                    flex: 1,
-                    border: `1px solid ${cfg.border}`,
-                    backgroundColor: cfg.bg,
-                    borderRadius: 10,
-                    padding: '16px 18px',
-                    boxShadow: isActive ? '0 4px 12px rgba(79, 70, 229, 0.08)' : 'none',
-                    transition: 'all var(--transition-base)',
-                  }}
-                >
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
-                    <span
-                      style={{
-                        width: 24,
-                        height: 24,
-                        borderRadius: '50%',
-                        backgroundColor: isDone ? 'var(--success)' : isActive ? 'var(--accent)' : 'var(--border-medium)',
-                        color: isDone || isActive ? 'white' : 'var(--text-muted)',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        fontSize: 11,
-                        fontWeight: 700,
-                      }}
-                    >
+                <div style={{
+                  flex: 1,
+                  padding: '14px 16px',
+                  borderRadius: 10,
+                  background: isDone ? 'var(--success-light)' : isActive ? 'var(--accent-light)' : 'var(--bg-base)',
+                  border: `1px solid ${isDone ? 'var(--success-border)' : isActive ? 'var(--accent-border)' : 'var(--border-light)'}`,
+                  transition: 'all var(--transition-base)',
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+                    <div style={{
+                      width: 22, height: 22, borderRadius: '50%',
+                      background: isDone ? 'var(--success)' : isActive ? 'var(--accent)' : 'var(--border-medium)',
+                      color: isDone || isActive ? 'white' : 'var(--text-muted)',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      fontSize: 10, fontWeight: 800, flexShrink: 0,
+                    }}>
                       {isDone ? (
-                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round">
+                        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round">
                           <polyline points="20 6 9 17 4 12" />
                         </svg>
+                      ) : isActive ? (
+                        <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" style={{ animation: 'spin 1.5s linear infinite' }}>
+                          <path d="M21 12a9 9 0 1 1-6.219-8.56" />
+                        </svg>
                       ) : phase.num}
-                    </span>
-                    <span className="badge" style={{
-                      fontSize: 10,
-                      padding: '2px 8px',
-                      backgroundColor: cfg.bg,
-                      color: cfg.color,
-                      border: `1px solid ${cfg.border}`,
-                      borderRadius: 12,
-                      fontWeight: 700,
-                      letterSpacing: '0.3px',
-                      textTransform: 'uppercase',
-                    }}>
-                      {cfg.label}
-                    </span>
+                    </div>
                   </div>
-                  <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)', lineHeight: 1.3 }}>
+                  <div style={{ fontSize: 12, fontWeight: 700, color: isDone ? 'var(--success)' : isActive ? 'var(--accent)' : 'var(--text-secondary)' }}>
                     {phase.name}
                   </div>
-                  {phase.count > 0 ? (
-                    <div style={{ fontSize: 11.5, color: 'var(--text-secondary)', fontWeight: 500, marginTop: 6 }}>
-                      {phase.count} files
-                    </div>
-                  ) : (
-                    <div style={{ fontSize: 11.5, color: 'var(--text-muted)', marginTop: 6 }}>
-                      No files
-                    </div>
-                  )}
+                  <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2, fontWeight: 500 }}>
+                    {phase.count > 0 ? `${phase.count} files` : phase.sub}
+                  </div>
                 </div>
-                {idx < dynamicPhases.length - 1 && (
-                  <div style={{ width: 32, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--border-medium)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                {idx < phases.length - 1 && (
+                  <div style={{ width: 24, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--border-medium)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                       <polyline points="9 18 15 12 9 6" />
                     </svg>
                   </div>
@@ -356,106 +288,153 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* ── Recent Documents ── */}
-      <div className="premium-card" style={{ overflow: 'hidden' }}>
-        <div style={{ padding: '24px 28px', borderBottom: '1px solid var(--border-light)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <div>
-            <h2 style={{ fontSize: 16, fontWeight: 700, color: 'var(--text-primary)', letterSpacing: '-0.3px' }}>
-              Recent Documents
-            </h2>
-            <p style={{ fontSize: 13, color: 'var(--text-muted)', marginTop: 4 }}>
-              Last documents ingested into the pipeline
-            </p>
+      {/* ── Two-Column Row: Recent Docs + Connected Sources ── */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 320px', gap: 20 }}>
+
+        {/* Recent Documents */}
+        <div className="premium-card" style={{ overflow: 'hidden' }}>
+          <div style={{ padding: '18px 22px', borderBottom: '1px solid var(--border-light)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <div>
+              <h2 style={{ fontSize: 15, fontWeight: 700, color: 'var(--text-primary)' }}>Recent Documents</h2>
+              <p style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>Last documents pulled into the pipeline</p>
+            </div>
+            <Link href="/analysis" style={{ fontSize: 12, color: 'var(--accent)', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 4 }}>
+              View all →
+            </Link>
           </div>
-          <a href="/analysis" style={{
-            fontSize: 13,
-            color: 'var(--accent)',
-            fontWeight: 600,
-            display: 'flex',
-            alignItems: 'center',
-            gap: 4,
-            padding: '6px 12px',
-            borderRadius: 6,
-            transition: 'all var(--transition-fast)',
-          }}
-             onMouseEnter={(e) => (e.currentTarget.style.color = 'var(--accent-hover)')}
-             onMouseLeave={(e) => (e.currentTarget.style.color = 'var(--accent)')}
-          >
-            View all
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-              <polyline points="9 18 15 12 9 6" />
-            </svg>
-          </a>
-        </div>
-        <div>
-          {/* Table Header */}
-          <div style={{
-            display: 'grid',
-            gridTemplateColumns: '2.5fr 1.2fr 1.2fr 1.2fr 100px',
-            padding: '12px 28px',
-            borderBottom: '1px solid var(--border-light)',
-            backgroundColor: 'var(--bg-base)',
-          }}>
-            {['Document', 'Type', 'Source', 'Date', 'Status'].map((col) => (
-              <span key={col} style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.6px' }}>
-                {col}
-              </span>
-            ))}
-          </div>
-          {/* Rows */}
-          {data.recentDocs.length > 0 ? (
-            data.recentDocs.map((doc: any, i: number) => (
-              <div
-                key={i}
-                style={{
-                  display: 'grid',
-                  gridTemplateColumns: '2.5fr 1.2fr 1.2fr 1.2fr 100px',
-                  padding: '16px 28px',
-                  borderBottom: i < data.recentDocs.length - 1 ? '1px solid var(--border-light)' : 'none',
-                  alignItems: 'center',
-                  transition: 'background-color var(--transition-fast)',
-                  cursor: 'pointer',
-                }}
-                onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = 'var(--bg-hover)')}
-                onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'transparent')}
-              >
-                <div style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0 }}>
-                  <div style={{
-                    width: 32,
-                    height: 32,
-                    backgroundColor: '#F1F5F9',
-                    border: '1px solid #E2E8F0',
-                    borderRadius: 8,
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    flexShrink: 0
-                  }}>
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--text-secondary)" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-                      <path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z" />
-                      <polyline points="14 2 14 8 20 8" />
-                    </svg>
-                  </div>
-                  <span style={{ fontSize: 14, color: 'var(--text-primary)', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    {doc.name}
-                  </span>
-                </div>
-                <span style={{ fontSize: 13, color: 'var(--text-secondary)', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{doc.type}</span>
-                <span style={{ fontSize: 13, color: 'var(--text-secondary)', fontWeight: 500 }}>{doc.source}</span>
-                <span style={{ fontSize: 13, color: 'var(--text-muted)' }}>{doc.date}</span>
-                <div>
-                  <span className={docStatusBadge[doc.status]} style={{ padding: '3px 9px', fontSize: 11, fontWeight: 700 }}>
-                    {docStatusLabel[doc.status]}
-                  </span>
-                </div>
+
+          {data.recentDocs && data.recentDocs.length > 0 ? (
+            <div>
+              {/* Table Header */}
+              <div style={{
+                display: 'grid', gridTemplateColumns: '2.5fr 1.2fr 1fr 90px',
+                padding: '10px 22px', background: 'var(--bg-base)',
+                borderBottom: '1px solid var(--border-light)',
+              }}>
+                {['Document', 'Source', 'Date', 'Status'].map(col => (
+                  <span key={col} style={{ fontSize: 10.5, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>{col}</span>
+                ))}
               </div>
-            ))
+              {data.recentDocs.slice(0, 6).map((doc: any, i: number) => {
+                const cfg = docStatusConfig[doc.status] || docStatusConfig.pending;
+                return (
+                  <div key={i} style={{
+                    display: 'grid', gridTemplateColumns: '2.5fr 1.2fr 1fr 90px',
+                    padding: '13px 22px',
+                    borderBottom: i < data.recentDocs.length - 1 ? '1px solid var(--border-light)' : 'none',
+                    alignItems: 'center',
+                    cursor: 'pointer',
+                    transition: 'background var(--transition-fast)',
+                  }}
+                    onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--bg-hover)')}
+                    onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
+                      <div style={{
+                        width: 30, height: 30, borderRadius: 7, flexShrink: 0,
+                        background: 'var(--bg-base)', border: '1px solid var(--border-default)',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      }}>
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z" />
+                          <polyline points="14 2 14 8 20 8" />
+                        </svg>
+                      </div>
+                      <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {doc.name}
+                      </span>
+                    </div>
+                    <span style={{ fontSize: 12, color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: 5 }}>
+                      <span>{sourceIcon[doc.source] || '📄'}</span> {doc.source}
+                    </span>
+                    <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>{doc.date}</span>
+                    <span style={{ display: 'inline-flex', alignItems: 'center', padding: '2px 8px', borderRadius: 20, fontSize: 11, fontWeight: 700, background: cfg.bg, color: cfg.color, border: `1px solid ${cfg.border}` }}>
+                      {cfg.label}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
           ) : (
-            <div style={{ padding: '48px 28px', textAlign: 'center', color: 'var(--text-muted)', fontSize: 14 }}>
-              No documents processed in the pipeline yet. Connect Clio or upload files to begin.
+            <div style={{ padding: '48px 24px', textAlign: 'center' }}>
+              <div style={{ fontSize: 32, marginBottom: 12 }}>📭</div>
+              <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 6 }}>No documents yet</div>
+              <div style={{ fontSize: 13, color: 'var(--text-muted)' }}>Connect an integration and run a sync to get started.</div>
+              <Link href="/settings" style={{
+                display: 'inline-flex', marginTop: 16, padding: '8px 16px', borderRadius: 8,
+                background: 'var(--accent)', color: 'white', fontSize: 13, fontWeight: 700,
+                boxShadow: '0 4px 12px rgba(91,108,248,0.25)',
+              }}>
+                Go to Connections
+              </Link>
             </div>
           )}
         </div>
+
+        {/* Connected Sources */}
+        <div className="premium-card" style={{ overflow: 'hidden' }}>
+          <div style={{ padding: '18px 22px', borderBottom: '1px solid var(--border-light)' }}>
+            <h2 style={{ fontSize: 15, fontWeight: 700, color: 'var(--text-primary)' }}>Connected Sources</h2>
+            <p style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>
+              {connectedList.length} of 6 active
+            </p>
+          </div>
+          <div style={{ padding: '12px' }}>
+            {connectedList.length === 0 ? (
+              <div style={{ padding: '24px 12px', textAlign: 'center' }}>
+                <div style={{ fontSize: 24, marginBottom: 8 }}>🔌</div>
+                <div style={{ fontSize: 13, color: 'var(--text-muted)' }}>No integrations connected yet.</div>
+                <Link href="/settings" style={{ display: 'inline-flex', marginTop: 12, padding: '7px 14px', borderRadius: 8, background: 'var(--accent-light)', color: 'var(--accent)', fontSize: 12, fontWeight: 700 }}>
+                  Connect →
+                </Link>
+              </div>
+            ) : connectedList.map(([id, val]: any) => {
+              const providerNames: Record<string, string> = {
+                clio: 'Clio Manage', gdrive: 'Google Drive', gmail: 'Gmail',
+                onedrive: 'OneDrive', outlook: 'Outlook', dropbox: 'Dropbox',
+              };
+              const providerIcons: Record<string, string> = {
+                clio: '🟣', gdrive: '🟢', gmail: '🔴', onedrive: '🔵', outlook: '🔵', dropbox: '🔷',
+              };
+              return (
+                <div key={id} style={{
+                  display: 'flex', alignItems: 'center', gap: 10,
+                  padding: '10px 12px', borderRadius: 9,
+                  background: 'var(--bg-base)', border: '1px solid var(--border-light)',
+                  marginBottom: 8,
+                }}>
+                  <span style={{ fontSize: 18, flexShrink: 0 }}>{providerIcons[id] || '⚪'}</span>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>{providerNames[id] || id}</div>
+                    {val.email && <div style={{ fontSize: 11, color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{val.email}</div>}
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 5, flexShrink: 0 }}>
+                    <div className="status-dot online" />
+                    <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--success)' }}>Live</span>
+                  </div>
+                </div>
+              );
+            })}
+            {connectedList.length > 0 && (
+              <Link href="/settings" style={{
+                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5,
+                padding: '9px', borderRadius: 8, marginTop: 4,
+                border: '1px dashed var(--border-medium)',
+                fontSize: 12, fontWeight: 600, color: 'var(--text-muted)',
+                transition: 'all var(--transition-fast)',
+              }}
+                onMouseEnter={(e) => { (e.currentTarget.style.borderColor = 'var(--accent-border)'); (e.currentTarget.style.color = 'var(--accent)'); }}
+                onMouseLeave={(e) => { (e.currentTarget.style.borderColor = 'var(--border-medium)'); (e.currentTarget.style.color = 'var(--text-muted)'); }}
+              >
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
+                </svg>
+                Add integration
+              </Link>
+            )}
+          </div>
+        </div>
+
       </div>
     </div>
   );

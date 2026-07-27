@@ -19,28 +19,37 @@ export default function AnalysisPage() {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    fetch('/api/cms/matters')
+    fetch('/api/cms/documents')
       .then(res => res.json())
       .then(data => {
-        const matters = data.matters || [];
-        const filesList: any[] = [];
-        for (const m of matters) {
-          for (const d of m.documents) {
-            const isFlagged = !d.ai_tag || d.ai_tag.includes('Uncategorized') || d.ai_tag.includes('⚠');
-            filesList.push({
-              name: d.name,
-              type: d.ai_tag || 'Document 📄',
-              size: d.size ? `${(d.size / 1024).toFixed(0)} KB` : '120 KB',
-              source: m.provider === 'clio' ? 'Clio Manage' : 'MyCase',
-              date: d.downloaded_at ? new Date(d.downloaded_at).toLocaleDateString() : 'Just now',
-              status: isFlagged ? 'flagged' : 'complete',
-              phase: isFlagged ? 'Phase 3 — Quality Check' : 'Phase 4 — Case Attribution',
-              flags: isFlagged ? ['Uncategorized File Type'] : []
-            });
-          }
+        if (data.documents && data.documents.length > 0) {
+          setAllDocs(data.documents);
+          setLoading(false);
+        } else {
+          return fetch('/api/cms/matters').then(res => res.json()).then(mData => {
+            const matters = mData.matters || [];
+            const filesList: any[] = [];
+            for (const m of matters) {
+              for (const d of m.documents) {
+                const isFlagged = !d.ai_tag || d.ai_tag.includes('Uncategorized') || d.ai_tag.includes('⚠');
+                filesList.push({
+                  id: d.id,
+                  name: d.name,
+                  type: d.ai_tag || 'Document 📄',
+                  size: d.size ? `${(d.size / 1024).toFixed(0)} KB` : '120 KB',
+                  source: 'Clio Manage',
+                  date: d.downloaded_at ? new Date(d.downloaded_at).toLocaleDateString() : 'Just now',
+                  status: isFlagged ? 'flagged' : 'complete',
+                  phase: isFlagged ? 'Phase 3 — Quality Check' : 'Phase 4 — Case Attribution',
+                  flags: isFlagged ? ['Uncategorized File Type'] : [],
+                  downloadUrl: `/api/connections/clio/download?docId=${d.id || ''}&name=${encodeURIComponent(d.name || '')}`
+                });
+              }
+            }
+            setAllDocs(filesList);
+            setLoading(false);
+          });
         }
-        setAllDocs(filesList);
-        setLoading(false);
       })
       .catch(() => setLoading(false));
   }, []);
@@ -251,12 +260,12 @@ export default function AnalysisPage() {
         {/* Table Header */}
         <div style={{
           display: 'grid',
-          gridTemplateColumns: '2.5fr 1.2fr 1fr 1fr 1.5fr 100px',
+          gridTemplateColumns: '2.5fr 1.2fr 1fr 1fr 1.3fr 100px 100px',
           padding: '12px 28px',
           borderBottom: '1px solid var(--border-light)',
           backgroundColor: 'var(--bg-base)',
         }}>
-          {['Document', 'Type', 'Size', 'Source', 'Pipeline Stage', 'Status'].map((col) => (
+          {['Document', 'Type', 'Size', 'Source', 'Pipeline Stage', 'Status', 'Action'].map((col) => (
             <span key={col} style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.6px' }}>
               {col}
             </span>
@@ -269,7 +278,7 @@ export default function AnalysisPage() {
             <div
               style={{
                 display: 'grid',
-                gridTemplateColumns: '2.5fr 1.2fr 1fr 1fr 1.5fr 100px',
+                gridTemplateColumns: '2.5fr 1.2fr 1fr 1fr 1.3fr 100px 100px',
                 padding: '16px 28px',
                 borderBottom: i < filtered.length - 1 ? '1px solid var(--border-light)' : 'none',
                 alignItems: 'center',
@@ -308,6 +317,35 @@ export default function AnalysisPage() {
                 <span className={statusBadgeStyle[doc.status].className} style={{ padding: '3px 9px', fontSize: 11, fontWeight: 700 }}>
                   {statusBadgeStyle[doc.status].label}
                 </span>
+              </div>
+              <div>
+                <a
+                  href={doc.downloadUrl || `/api/connections/clio/download?name=${encodeURIComponent(doc.name)}`}
+                  target="_blank"
+                  rel="noreferrer"
+                  download
+                  onClick={(e) => e.stopPropagation()}
+                  style={{
+                    padding: '4px 10px',
+                    borderRadius: 6,
+                    backgroundColor: 'var(--accent-light)',
+                    color: 'var(--accent)',
+                    border: '1px solid var(--accent-border)',
+                    fontSize: 12,
+                    fontWeight: 700,
+                    textDecoration: 'none',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 4
+                  }}
+                >
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                    <polyline points="7 10 12 15 17 10" />
+                    <line x1="12" y1="15" x2="12" y2="3" />
+                  </svg>
+                  Save
+                </a>
               </div>
             </div>
             {/* Flags row for flagged docs */}
