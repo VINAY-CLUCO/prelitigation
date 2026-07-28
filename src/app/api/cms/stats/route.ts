@@ -98,8 +98,10 @@ export async function GET() {
     }
   };
 
-  // Scan case managers (Clio only)
-  scanVault(CLIO_VAULT, 'Clio Manage');
+  // Scan case managers
+  scanVault(path.join(VAULT_DIR, 'vault', 'clio'), 'Clio Manage');
+  scanVault(path.join(VAULT_DIR, 'vault', 'mycase'), 'MyCase');
+  scanVault(path.join(VAULT_DIR, 'vault', 'filevine'), 'Filevine');
 
   // Scan cloud drives and mail archives
   scanDirectVault(path.join(VAULT_DIR, 'vault', 'gdrive'), 'Google Drive');
@@ -120,6 +122,8 @@ export async function GET() {
     // Choose appropriate colors
     const colors: Record<string, string> = {
       CLIO: '#4F46E5',
+      MYCASE: '#2563EB',
+      FILEVINE: '#059669',
       GDRIVE: '#16A34A',
       DROPBOX: '#0061FF',
       ONEDRIVE: '#0078D4',

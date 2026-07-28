@@ -14,6 +14,8 @@ import {
   isJobPaused
 } from './queueStore';
 import { syncClioData, downloadPhysicalFile } from './clioSync';
+import { syncMycaseData } from './mycaseSync';
+import { syncFilevineData } from './filevineSync';
 
 
 let workerInterval: NodeJS.Timeout | null = null;
@@ -113,6 +115,28 @@ export function startQueueWorker() {
 
         if (job.type === 'clio-matter-sync') {
           await syncClioData((msg, count) => {
+            updateJobProgress(job.id, {
+              percent: count ? Math.min(100, Math.round((count / 15) * 100)) : 10,
+              completed: count ?? 0,
+              total: 15,
+              msg
+            });
+          }, job.id);
+          await completeJob(job.id);
+
+        } else if (job.type === 'mycase-sync') {
+          await syncMycaseData((msg, count) => {
+            updateJobProgress(job.id, {
+              percent: count ? Math.min(100, Math.round((count / 15) * 100)) : 10,
+              completed: count ?? 0,
+              total: 15,
+              msg
+            });
+          }, job.id);
+          await completeJob(job.id);
+
+        } else if (job.type === 'filevine-sync') {
+          await syncFilevineData((msg, count) => {
             updateJobProgress(job.id, {
               percent: count ? Math.min(100, Math.round((count / 15) * 100)) : 10,
               completed: count ?? 0,

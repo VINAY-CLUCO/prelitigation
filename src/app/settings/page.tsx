@@ -45,6 +45,30 @@ const initialConnections: Connection[] = [
     icon: (<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"><rect width="18" height="18" x="3" y="3" rx="2" /><path d="M9 9h6M9 12h6M9 15h4" /></svg>),
   },
   {
+    id: 'mycase', name: 'MyCase', provider: 'mycase.com', emoji: '🏛️',
+    description: 'Sync matters, clients, and case documents from MyCase.',
+    category: 'Case Management', authMethod: 'oauth', status: 'disconnected',
+    iconColor: '#2563EB', webhookSupport: false,
+    firstSyncWarning: 'Scans all your MyCase matters and documents.',
+    scopes: [
+      { label: 'matters.read', description: 'Read matters' },
+      { label: 'documents.read', description: 'Read case documents' },
+    ],
+    icon: (<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1-2.5-2.5Z"/><path d="M6.5 2H20v20H6.5a2.5 2.5 0 0 1-2.5-2.5v-15A2.5 2.5 0 0 1 6.5 2Z"/></svg>),
+  },
+  {
+    id: 'filevine', name: 'Filevine', provider: 'filevine.com', emoji: '📁',
+    description: 'Sync projects, contacts, and documents from Filevine.',
+    category: 'Case Management', authMethod: 'oauth', status: 'disconnected',
+    iconColor: '#059669', webhookSupport: false,
+    firstSyncWarning: 'Scans all your Filevine projects and documents.',
+    scopes: [
+      { label: 'projects.read', description: 'Read projects' },
+      { label: 'documents.read', description: 'Read documents' },
+    ],
+    icon: (<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>),
+  },
+  {
     id: 'gdrive', name: 'Google Drive', provider: 'drive.google.com', emoji: '🟢',
     description: 'Recursively scans all folders and pulls every PDF and Word doc automatically.',
     category: 'Cloud Storage', authMethod: 'oauth', status: 'disconnected',
@@ -108,6 +132,8 @@ const initialConnections: Connection[] = [
 
 const OAUTH_ROUTES: Record<string, string> = {
   clio: '/api/auth/clio',
+  mycase: '/api/auth/mycase',
+  filevine: '/api/auth/filevine',
   gdrive: '/api/auth/google?provider=gdrive',
   gmail: '/api/auth/google?provider=gmail',
   onedrive: '/api/auth/microsoft?provider=onedrive',
