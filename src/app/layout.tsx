@@ -31,7 +31,7 @@ export default function RootLayout({
               flex: 1,
               minHeight: "100vh",
               overflow: "auto",
-              backgroundColor: "var(--bg-base)",
+              backgroundColor: "transparent",
             }}
           >
             {children}

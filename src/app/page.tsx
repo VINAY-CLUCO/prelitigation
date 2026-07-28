@@ -52,11 +52,11 @@ export default function DashboardPage() {
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 16, marginBottom: 28 }}>
           {[1, 2, 3, 4].map(i => (
-            <div key={i} className="premium-card skeleton" style={{ height: 120 }} />
+            <div key={i} className="card skeleton" style={{ height: 120 }} />
           ))}
         </div>
-        <div className="premium-card skeleton" style={{ height: 100, marginBottom: 28 }} />
-        <div className="premium-card skeleton" style={{ height: 320 }} />
+        <div className="card skeleton" style={{ height: 100, marginBottom: 28 }} />
+        <div className="card skeleton" style={{ height: 320 }} />
       </div>
     );
   }
@@ -85,19 +85,19 @@ export default function DashboardPage() {
       {connectedList.length === 0 ? (
         <div style={{
           padding: '20px 24px',
-          borderRadius: 14,
-          background: 'linear-gradient(135deg, rgba(91,108,248,0.06) 0%, rgba(123,135,250,0.04) 100%)',
-          border: '1px solid var(--accent-border)',
+          borderRadius: 'var(--radius-xl)',
+          background: 'var(--bg-hover)',
+          border: '1px solid var(--border-default)',
           marginBottom: 28,
           display: 'flex',
           alignItems: 'center',
           gap: 16,
         }}>
           <div style={{
-            width: 44, height: 44, borderRadius: 12,
-            background: 'linear-gradient(135deg, var(--accent), var(--accent-mid))',
+            width: 44, height: 44, borderRadius: 'var(--radius-lg)',
+            background: 'var(--accent)',
             display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
-            boxShadow: '0 4px 12px rgba(91,108,248,0.25)',
+            boxShadow: 'var(--shadow-sm)',
           }}>
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
               <circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="16" /><line x1="8" y1="12" x2="16" y2="12" />
@@ -107,20 +107,7 @@ export default function DashboardPage() {
             <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--text-primary)' }}>Get started — connect your first integration</div>
             <div style={{ fontSize: 13, color: 'var(--text-muted)', marginTop: 3 }}>Link Clio, Google Drive, Gmail or Outlook to begin pulling documents into the pipeline.</div>
           </div>
-          <Link href="/settings" style={{
-            padding: '9px 18px',
-            borderRadius: 8,
-            background: 'var(--accent)',
-            color: 'white',
-            fontSize: 13,
-            fontWeight: 700,
-            flexShrink: 0,
-            boxShadow: '0 4px 12px rgba(91,108,248,0.25)',
-            transition: 'all var(--transition-fast)',
-          }}
-            onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--accent-hover)')}
-            onMouseLeave={(e) => (e.currentTarget.style.background = 'var(--accent)')}
-          >
+          <Link href="/settings" className="btn btn-primary">
             Set up Connections →
           </Link>
         </div>
@@ -199,7 +186,7 @@ export default function DashboardPage() {
             trend: null,
           },
         ].map((stat) => (
-          <div key={stat.label} className="premium-card hover-lift" style={{ padding: '20px 22px' }}>
+          <div key={stat.label} className="card" style={{ padding: '20px 22px' }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
               <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-muted)', letterSpacing: '0.3px', textTransform: 'uppercase' }}>
                 {stat.label}
@@ -228,7 +215,7 @@ export default function DashboardPage() {
       </div>
 
       {/* ── Pipeline Phases ── */}
-      <div className="premium-card" style={{ padding: '22px 24px', marginBottom: 28 }}>
+      <div className="card" style={{ padding: '22px 24px', marginBottom: 28 }}>
         <div style={{ marginBottom: 18, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <div>
             <h2 style={{ fontSize: 15, fontWeight: 700, color: 'var(--text-primary)', letterSpacing: '-0.3px' }}>Pipeline Phases</h2>
@@ -292,7 +279,7 @@ export default function DashboardPage() {
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 320px', gap: 20 }}>
 
         {/* Recent Documents */}
-        <div className="premium-card" style={{ overflow: 'hidden' }}>
+        <div className="card" style={{ overflow: 'hidden' }}>
           <div style={{ padding: '18px 22px', borderBottom: '1px solid var(--border-light)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
             <div>
               <h2 style={{ fontSize: 15, fontWeight: 700, color: 'var(--text-primary)' }}>Recent Documents</h2>
@@ -363,7 +350,7 @@ export default function DashboardPage() {
               <Link href="/settings" style={{
                 display: 'inline-flex', marginTop: 16, padding: '8px 16px', borderRadius: 8,
                 background: 'var(--accent)', color: 'white', fontSize: 13, fontWeight: 700,
-                boxShadow: '0 4px 12px rgba(91,108,248,0.25)',
+                boxShadow: 'var(--shadow-sm)',
               }}>
                 Go to Connections
               </Link>
@@ -372,7 +359,7 @@ export default function DashboardPage() {
         </div>
 
         {/* Connected Sources */}
-        <div className="premium-card" style={{ overflow: 'hidden' }}>
+        <div className="card" style={{ overflow: 'hidden' }}>
           <div style={{ padding: '18px 22px', borderBottom: '1px solid var(--border-light)' }}>
             <h2 style={{ fontSize: 15, fontWeight: 700, color: 'var(--text-primary)' }}>Connected Sources</h2>
             <p style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>

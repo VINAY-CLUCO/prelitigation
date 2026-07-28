@@ -84,14 +84,17 @@ export async function GET() {
           documentsList.push({
             id: d.id || '',
             name: d.name,
-            type: d.ai_tag || 'Document 📄',
+            type: d.type || d.ai_tag || 'Document 📄', // Preserve the true type (e.g. 'Email')
+            ai_tag: d.ai_tag || 'Document 📄',
             source: source,
             date: d.downloaded_at ? new Date(d.downloaded_at).toLocaleString() : 'Just now',
             downloadedAtRaw: d.downloaded_at || '',
             status: isFlagged ? 'flagged' : 'complete',
             size: d.size ? `${(d.size / 1024).toFixed(0)} KB` : '120 KB',
             emailSender: d.emailSender || null,
-            emailSubject: d.emailSubject || null
+            emailSubject: d.emailSubject || null,
+            snippet: d.snippet || null,
+            attachments: d.attachments || []
           });
         }
       } catch {}

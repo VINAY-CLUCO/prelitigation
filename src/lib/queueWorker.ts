@@ -448,7 +448,42 @@ async function syncGmail(jobId: string, accessToken: string) {
       const headers = msgDetails.data.payload?.headers || [];
       const emailSubject = headers.find((h: any) => h.name.toLowerCase() === 'subject')?.value || 'No Subject';
       const emailSender = headers.find((h: any) => h.name.toLowerCase() === 'from')?.value || 'Unknown Sender';
+      const snippet = msgDetails.data.snippet || '';
 
+      // 1. Index the Email Itself
+      const emailDocId = `email_${msg.id}`;
+      const emailFilePath = path.join(GMAIL_VAULT, `${emailDocId}.json`);
+      const emailData = {
+        id: emailDocId,
+        subject: emailSubject,
+        sender: emailSender,
+        snippet: snippet,
+        date: new Date(parseInt(internalDate!)).toISOString(),
+        attachments: attachments.map(a => a.filename)
+      };
+      try { fs.writeFileSync(emailFilePath, JSON.stringify(emailData, null, 2)); } catch {}
+
+      const emailIndexDoc = {
+        id: emailDocId,
+        name: `${emailSubject.replace(/[^a-zA-Z0-9.\-_ ]/g, '_').slice(0, 50)}.email`,
+        type: 'Email',
+        size: JSON.stringify(emailData).length,
+        lastModified: emailData.date,
+        snippet: snippet,
+        ai_tag: 'Email Communication',
+        downloaded: true,
+        downloaded_at: new Date().toISOString(),
+        emailSubject,
+        emailSender,
+        source: 'Gmail',
+        attachments: attachments.map(a => a.filename)
+      };
+      
+      const eIdx = documents.findIndex((d) => d.id === emailIndexDoc.id);
+      if (eIdx >= 0) documents[eIdx] = emailIndexDoc;
+      else documents.push(emailIndexDoc);
+
+      // 2. Download and Index Attachments
       for (const att of attachments) {
         try {
           const rawDocId = att.attachmentId || `${msg.id}_${att.filename}`;
@@ -490,8 +525,10 @@ async function syncGmail(jobId: string, accessToken: string) {
           const newDoc = {
             id: rawDocId,
             name: att.filename,
+            type: 'Document',
+            source: 'Gmail',
             size: buffer.length,
-            lastModified: internalDate,
+            lastModified: emailData.date,
             ai_tag: triageDocument(att.filename),
             downloaded: true,
             downloaded_at: new Date().toISOString(),
@@ -784,7 +821,46 @@ async function syncOutlook(jobId: string, accessToken: string) {
     if (msg.attachments && msg.attachments.length > 0) {
       const emailSubject = msg.subject || 'No Subject';
       const emailSender = msg.from?.emailAddress?.address || msg.sender?.emailAddress?.address || 'Unknown Sender';
+      const snippet = msg.bodyPreview || '';
 
+      // 1. Index the Email Itself
+      const emailDocId = `email_${msg.id}`;
+      // Clean the ID for Windows filesystem compatibility (remove invalid chars)
+      const safeEmailId = emailDocId.replace(/[^a-zA-Z0-9.\-_]/g, '_');
+      const emailFilePath = path.join(OUTLOOK_VAULT, `${safeEmailId}.json`);
+      const attachedFiles = (msg.attachments || []).filter((a: any) => a['@odata.type'] === '#microsoft.graph.fileAttachment').map((a: any) => a.name);
+
+      const emailData = {
+        id: emailDocId,
+        subject: emailSubject,
+        sender: emailSender,
+        snippet: snippet,
+        date: msg.lastModifiedDateTime,
+        attachments: attachedFiles
+      };
+      try { fs.writeFileSync(emailFilePath, JSON.stringify(emailData, null, 2)); } catch {}
+
+      const emailIndexDoc = {
+        id: emailDocId,
+        name: `${emailSubject.replace(/[^a-zA-Z0-9.\-_ ]/g, '_').slice(0, 50)}.email`,
+        type: 'Email',
+        size: JSON.stringify(emailData).length,
+        lastModified: msg.lastModifiedDateTime,
+        snippet: snippet,
+        ai_tag: 'Email Communication',
+        downloaded: true,
+        downloaded_at: new Date().toISOString(),
+        emailSubject,
+        emailSender,
+        source: 'Outlook',
+        attachments: attachedFiles
+      };
+
+      const eIdx = documents.findIndex((d) => d.id === emailIndexDoc.id);
+      if (eIdx >= 0) documents[eIdx] = emailIndexDoc;
+      else documents.push(emailIndexDoc);
+
+      // 2. Download and Index Attachments
       for (const att of msg.attachments) {
         if (att['@odata.type'] === '#microsoft.graph.fileAttachment' && isTargetDoc(att.name)) {
           count++;
@@ -809,6 +885,8 @@ async function syncOutlook(jobId: string, accessToken: string) {
           const newDoc = {
             id: att.id,
             name: att.name,
+            type: 'Document',
+            source: 'Outlook',
             size: att.size,
             lastModified: msg.lastModifiedDateTime,
             ai_tag: triageDocument(att.name),
@@ -818,7 +896,7 @@ async function syncOutlook(jobId: string, accessToken: string) {
             emailSender
           };
 
-          const idx = documents.findIndex((d) => d.id === att.id);
+          const idx = documents.findIndex((d) => d.id === newDoc.id);
           if (idx >= 0) documents[idx] = newDoc;
           else documents.push(newDoc);
 

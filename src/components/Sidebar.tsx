@@ -8,22 +8,20 @@ const navItems = [
   {
     href: '/',
     label: 'Dashboard',
-    description: 'Overview & activity',
     icon: (
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <rect width="7" height="9" x="3" y="3" rx="1.5" />
-        <rect width="7" height="5" x="3" y="15" rx="1.5" />
-        <rect width="7" height="9" x="14" y="12" rx="1.5" />
-        <rect width="7" height="5" x="14" y="3" rx="1.5" />
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <rect width="7" height="9" x="3" y="3" rx="1" />
+        <rect width="7" height="5" x="3" y="16" rx="1" />
+        <rect width="7" height="9" x="14" y="12" rx="1" />
+        <rect width="7" height="5" x="14" y="3" rx="1" />
       </svg>
     ),
   },
   {
     href: '/settings',
     label: 'Connections',
-    description: 'Integrations & sync',
     icon: (
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
         <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
         <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
       </svg>
@@ -32,9 +30,8 @@ const navItems = [
   {
     href: '/collection',
     label: 'Documents',
-    description: 'All synced files',
     icon: (
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
         <path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z" />
         <polyline points="14 2 14 8 20 8" />
         <line x1="16" y1="13" x2="8" y2="13" />
@@ -45,9 +42,8 @@ const navItems = [
   {
     href: '/analysis',
     label: 'Analysis',
-    description: 'Review & classify',
     icon: (
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
         <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
       </svg>
     ),
@@ -55,9 +51,8 @@ const navItems = [
   {
     href: '/research',
     label: 'Research',
-    description: 'Case law & precedents',
     icon: (
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
         <circle cx="11" cy="11" r="8" />
         <line x1="21" y1="21" x2="16.65" y2="16.65" />
       </svg>
@@ -66,9 +61,8 @@ const navItems = [
   {
     href: '/cms',
     label: 'Case Manager',
-    description: 'Matters & clients',
     icon: (
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
         <rect width="18" height="18" x="3" y="3" rx="2" ry="2" />
         <line x1="9" y1="3" x2="9" y2="21" />
         <path d="M13 8h4" /><path d="M13 12h4" />
@@ -108,52 +102,50 @@ export default function Sidebar() {
       height: '100vh',
       position: 'fixed',
       left: 0, top: 0,
-      background: 'var(--sidebar-bg)',
-      borderRight: '1px solid var(--sidebar-border)',
       display: 'flex',
       flexDirection: 'column',
       zIndex: 50,
       userSelect: 'none',
+      background: 'var(--sidebar-bg)',
+      borderRight: '1px solid var(--sidebar-border)',
     }}>
 
       {/* ── Logo ── */}
       <div style={{
-        padding: '20px 20px 16px',
-        borderBottom: '1px solid var(--sidebar-border)',
+        padding: '24px 24px 32px',
         display: 'flex',
         alignItems: 'center',
         gap: 12,
       }}>
         <div style={{
-          width: 34,
-          height: 34,
-          background: 'linear-gradient(135deg, #5B6CF8 0%, #7B87FA 100%)',
-          borderRadius: 9,
+          width: 32,
+          height: 32,
+          background: 'var(--accent)',
+          borderRadius: 6,
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
           flexShrink: 0,
-          boxShadow: '0 4px 12px rgba(91, 108, 248, 0.35)',
         }}>
-          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
             <path d="M12 22s-8-4.5-8-11.8A8 8 0 0 1 12 2a8 8 0 0 1 8 8.2c0 7.3-8 11.8-8 11.8z" />
             <path d="m9 12 2 2 4-4" />
           </svg>
         </div>
         <div>
-          <div style={{ fontWeight: 800, fontSize: 15, color: '#FFFFFF', letterSpacing: '-0.4px', lineHeight: 1.1 }}>
+          <div style={{ fontWeight: 700, fontSize: 16, color: 'var(--text-primary)', letterSpacing: '-0.3px', lineHeight: 1.1 }}>
             Cluco
           </div>
-          <div style={{ fontSize: 10, color: 'var(--sidebar-text)', fontWeight: 500, letterSpacing: '0.5px', marginTop: 1 }}>
+          <div style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 600, letterSpacing: '0.2px', marginTop: 2, textTransform: 'uppercase' }}>
             Pre-Litigation
           </div>
         </div>
       </div>
 
       {/* ── Navigation ── */}
-      <nav style={{ flex: 1, padding: '12px 10px', overflowY: 'auto' }}>
-        <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--sidebar-section-label)', letterSpacing: '1px', textTransform: 'uppercase', padding: '4px 10px 8px' }}>
-          Workspace
+      <nav style={{ flex: 1, padding: '0 12px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 2 }}>
+        <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--sidebar-section-label)', letterSpacing: '0.5px', textTransform: 'uppercase', padding: '8px 12px 8px' }}>
+          Menu
         </div>
 
         {navItems.map((item) => {
@@ -166,22 +158,19 @@ export default function Sidebar() {
               style={{
                 display: 'flex',
                 alignItems: 'center',
-                gap: 10,
-                padding: '9px 12px',
-                borderRadius: 8,
-                marginBottom: 2,
-                fontSize: 13.5,
+                gap: 12,
+                padding: '8px 12px',
+                borderRadius: 'var(--radius-sm)',
+                fontSize: 13,
                 fontWeight: isActive ? 600 : 500,
                 color: isActive ? 'var(--sidebar-active-text)' : 'var(--sidebar-text)',
                 background: isActive ? 'var(--sidebar-active-bg)' : 'transparent',
-                border: `1px solid ${isActive ? 'var(--sidebar-active-border)' : 'transparent'}`,
                 textDecoration: 'none',
-                transition: 'all var(--transition-fast)',
-                position: 'relative',
+                transition: 'all 0.1s ease',
               }}
               onMouseEnter={(e) => {
                 if (!isActive) {
-                  (e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,0.05)';
+                  (e.currentTarget as HTMLElement).style.background = 'var(--bg-hover)';
                   (e.currentTarget as HTMLElement).style.color = 'var(--sidebar-text-hover)';
                 }
               }}
@@ -195,31 +184,18 @@ export default function Sidebar() {
               <span style={{
                 display: 'flex',
                 flexShrink: 0,
-                color: isActive ? '#7B87FA' : 'inherit',
+                color: isActive ? 'var(--sidebar-active-text)' : 'var(--text-muted)',
               }}>
                 {item.icon}
               </span>
               <span style={{ flex: 1 }}>{item.label}</span>
               {isConnections && connectedCount > 0 && (
-                <span style={{
-                  fontSize: 10,
-                  fontWeight: 700,
-                  padding: '1px 6px',
-                  borderRadius: 20,
-                  background: 'rgba(91, 108, 248, 0.2)',
-                  color: '#7B87FA',
-                  border: '1px solid rgba(91, 108, 248, 0.3)',
-                }}>
+                <span className="badge badge-neutral">
                   {connectedCount}
                 </span>
               )}
               {statsData.pendingJobsCount > 0 && item.href === '/' && (
-                <span style={{
-                  width: 7, height: 7, borderRadius: '50%',
-                  background: '#F59E0B',
-                  boxShadow: '0 0 0 2px rgba(245, 158, 11, 0.2)',
-                  flexShrink: 0,
-                }} />
+                <span className="status-dot syncing" />
               )}
             </Link>
           );
@@ -227,33 +203,33 @@ export default function Sidebar() {
       </nav>
 
       {/* ── Pipeline Progress ── */}
-      <div style={{ padding: '12px 14px', borderTop: '1px solid var(--sidebar-border)' }}>
+      <div style={{ padding: '24px 16px' }}>
         <div style={{
-          padding: '12px 14px',
-          background: 'rgba(255,255,255,0.04)',
-          borderRadius: 10,
-          border: '1px solid rgba(255,255,255,0.06)',
+          padding: '16px',
+          borderRadius: 'var(--radius-md)',
+          background: 'var(--bg-hover)',
+          border: '1px solid var(--border-default)',
         }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-            <span style={{ fontSize: 11, color: 'var(--sidebar-text)', fontWeight: 600 }}>Pipeline</span>
-            <span style={{ fontSize: 12, color: '#7B87FA', fontWeight: 700 }}>{percent}%</span>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+            <span style={{ fontSize: 11, color: 'var(--text-primary)', fontWeight: 600 }}>Sync Pipeline</span>
+            <span style={{ fontSize: 11, color: 'var(--accent)', fontWeight: 600 }}>{percent}%</span>
           </div>
-          <div style={{ height: 4, background: 'rgba(255,255,255,0.08)', borderRadius: 20, overflow: 'hidden' }}>
+          <div style={{ height: 4, background: 'var(--border-medium)', borderRadius: 2, overflow: 'hidden' }}>
             <div style={{
               width: `${percent}%`,
               height: '100%',
-              background: 'linear-gradient(90deg, #5B6CF8 0%, #7B87FA 100%)',
-              borderRadius: 20,
-              transition: 'width 0.8s cubic-bezier(0.4, 0, 0.2, 1)',
+              background: 'var(--accent)',
+              borderRadius: 2,
+              transition: 'width 0.4s ease',
             }} />
           </div>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 10 }}>
-            <span style={{ fontSize: 11, color: 'var(--sidebar-text)', fontWeight: 500 }}>
-              {statsData.totalDocs} docs collected
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 12 }}>
+            <span style={{ fontSize: 11, color: 'var(--text-secondary)', fontWeight: 500 }}>
+              {statsData.totalDocs} items
             </span>
             {statsData.pendingJobsCount > 0 && (
-              <span style={{ fontSize: 10, color: '#F59E0B', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 4 }}>
-                <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ animation: 'spin 1s linear infinite' }}>
+              <span style={{ fontSize: 11, color: 'var(--warning)', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 4 }}>
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="animate-spin">
                   <path d="M21 12a9 9 0 1 1-6.219-8.56" />
                 </svg>
                 Syncing
@@ -264,29 +240,28 @@ export default function Sidebar() {
 
         {/* User footer */}
         <div style={{
-          marginTop: 10,
-          padding: '10px 12px',
-          borderRadius: 8,
+          marginTop: 16,
+          padding: '12px',
+          borderRadius: 'var(--radius-sm)',
           display: 'flex',
           alignItems: 'center',
-          gap: 10,
+          gap: 12,
           cursor: 'pointer',
           transition: 'background var(--transition-fast)',
         }}
-          onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(255,255,255,0.04)')}
+          onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--bg-hover)')}
           onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
         >
           <div style={{
-            width: 28, height: 28, borderRadius: 8,
-            background: 'linear-gradient(135deg, #5B6CF8, #7B87FA)',
+            width: 28, height: 28, borderRadius: 4,
+            background: 'var(--bg-hover)', border: '1px solid var(--border-medium)',
             display: 'flex', alignItems: 'center', justifyContent: 'center',
-            fontSize: 12, fontWeight: 700, color: 'white', flexShrink: 0,
+            fontSize: 13, fontWeight: 600, color: 'var(--text-secondary)', flexShrink: 0
           }}>
-            C
+            V
           </div>
           <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontSize: 12, fontWeight: 600, color: '#E5E7EB', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>Cluco Workspace</div>
-            <div style={{ fontSize: 10, color: 'var(--sidebar-text)', fontWeight: 500 }}>v0.2.0 · Pre-Litigation</div>
+            <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>Vinay Workspace</div>
           </div>
         </div>
       </div>
