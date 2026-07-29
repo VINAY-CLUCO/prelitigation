@@ -152,19 +152,19 @@ export default function ResearchPage() {
   const handleInput = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     setQuery(e.target.value);
     e.target.style.height = 'auto';
-    e.target.style.height = \`\${Math.min(e.target.scrollHeight, 200)}px\`;
+    e.target.style.height = `${Math.min(e.target.scrollHeight, 200)}px`;
   };
 
   // Helper to render text with inline citations
   const renderTextWithCitations = (text: string, sources: SourceDoc[] = []) => {
     // Basic markdown to HTML for bolding (e.g. **text**)
-    let processedText = text.replace(/\\*\\*(.*?)\\*\\*/g, '<strong>$1</strong>');
+    let processedText = text.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
     
     // Replace [1], [2], etc with interactive citation pills
-    const parts = processedText.split(/(\\[\\d+\\])/g);
+    const parts = processedText.split(/(\[\d+\])/g);
     
     return parts.map((part, i) => {
-      const match = part.match(/\\[(\\d+)\\]/);
+      const match = part.match(/\[(\d+)\]/);
       if (match) {
         const sourceIndex = parseInt(match[1], 10) - 1;
         const source = sources[sourceIndex];
