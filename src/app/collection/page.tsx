@@ -106,7 +106,7 @@ export default function CollectionLibraryPage() {
     if (searchQuery) {
       const q = searchQuery.toLowerCase();
       result = result.filter(d => 
-        d.name.toLowerCase().includes(q) || 
+        (d.name || '').toLowerCase().includes(q) || 
         (d.emailSender || '').toLowerCase().includes(q) ||
         (d.emailSubject || '').toLowerCase().includes(q)
       );

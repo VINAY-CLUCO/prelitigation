@@ -36,7 +36,11 @@ export async function GET() {
       const docsFile = path.join(vaultPath, folder, 'documents.json');
       if (fs.existsSync(docsFile)) {
         try {
-          const docs = JSON.parse(fs.readFileSync(docsFile, 'utf-8'));
+          const rawData = fs.readFileSync(docsFile, 'utf-8');
+          if (!rawData.trim()) continue;
+          const docs = JSON.parse(rawData);
+          if (!Array.isArray(docs)) continue;
+
           for (const d of docs) {
             totalDocs++;
             const isFlagged = !d.ai_tag || d.ai_tag.includes('Uncategorized') || d.ai_tag.includes('⚠');
@@ -47,20 +51,22 @@ export async function GET() {
             }
             
             documentsList.push({
-              id: d.id || '',
-              name: d.name,
-              type: d.ai_tag || 'Document 📄',
+              id: d.id ? String(d.id) : `doc_${Date.now()}_${Math.random()}`,
+              name: typeof d.name === 'string' ? d.name : 'Untitled Document',
+              type: typeof d.ai_tag === 'string' ? d.ai_tag : 'Document 📄',
               source: source,
               date: d.downloaded_at ? new Date(d.downloaded_at).toLocaleString() : 'Just now',
-              downloadedAtRaw: d.downloaded_at || '',
+              downloadedAtRaw: typeof d.downloaded_at === 'string' ? d.downloaded_at : '',
               status: isFlagged ? 'flagged' : 'complete',
-              size: d.size ? `${(d.size / 1024).toFixed(0)} KB` : '120 KB',
-              emailSender: d.emailSender || null,
-              emailSubject: d.emailSubject || null,
+              size: typeof d.size === 'number' ? `${(d.size / 1024).toFixed(0)} KB` : (typeof d.size === 'string' ? d.size : '120 KB'),
+              emailSender: typeof d.emailSender === 'string' ? d.emailSender : null,
+              emailSubject: typeof d.emailSubject === 'string' ? d.emailSubject : null,
               matterId: folder // Only applicable for nested vaults like Clio
             });
           }
-        } catch {}
+        } catch (e) {
+          console.error(`[CMS Stats] Failed to parse ${docsFile}:`, e);
+        }
       }
     }
   };
@@ -71,7 +77,11 @@ export async function GET() {
     const docsFile = path.join(vaultPath, 'documents.json');
     if (fs.existsSync(docsFile)) {
       try {
-        const docs = JSON.parse(fs.readFileSync(docsFile, 'utf-8'));
+        const rawData = fs.readFileSync(docsFile, 'utf-8');
+        if (!rawData.trim()) return;
+        const docs = JSON.parse(rawData);
+        if (!Array.isArray(docs)) return;
+
         for (const d of docs) {
           totalDocs++;
           const isFlagged = !d.ai_tag || d.ai_tag.includes('Uncategorized') || d.ai_tag.includes('⚠');
@@ -82,22 +92,24 @@ export async function GET() {
           }
           
           documentsList.push({
-            id: d.id || '',
-            name: d.name,
-            type: d.type || d.ai_tag || 'Document 📄', // Preserve the true type (e.g. 'Email')
-            ai_tag: d.ai_tag || 'Document 📄',
+            id: d.id ? String(d.id) : `doc_${Date.now()}_${Math.random()}`,
+            name: typeof d.name === 'string' ? d.name : 'Untitled Document',
+            type: typeof d.type === 'string' ? d.type : (typeof d.ai_tag === 'string' ? d.ai_tag : 'Document 📄'),
+            ai_tag: typeof d.ai_tag === 'string' ? d.ai_tag : 'Document 📄',
             source: source,
             date: d.downloaded_at ? new Date(d.downloaded_at).toLocaleString() : 'Just now',
-            downloadedAtRaw: d.downloaded_at || '',
+            downloadedAtRaw: typeof d.downloaded_at === 'string' ? d.downloaded_at : '',
             status: isFlagged ? 'flagged' : 'complete',
-            size: d.size ? `${(d.size / 1024).toFixed(0)} KB` : '120 KB',
-            emailSender: d.emailSender || null,
-            emailSubject: d.emailSubject || null,
-            snippet: d.snippet || null,
-            attachments: d.attachments || []
+            size: typeof d.size === 'number' ? `${(d.size / 1024).toFixed(0)} KB` : (typeof d.size === 'string' ? d.size : '120 KB'),
+            emailSender: typeof d.emailSender === 'string' ? d.emailSender : null,
+            emailSubject: typeof d.emailSubject === 'string' ? d.emailSubject : null,
+            snippet: typeof d.snippet === 'string' ? d.snippet : null,
+            attachments: Array.isArray(d.attachments) ? d.attachments : []
           });
         }
-      } catch {}
+      } catch (e) {
+        console.error(`[CMS Stats] Failed to parse ${docsFile}:`, e);
+      }
     }
   };
 
