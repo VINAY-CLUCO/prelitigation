@@ -185,6 +185,37 @@ export default function CollectionLibraryPage() {
   }, [documents]);
   const formattedTotalSize = formatBytes(totalSizeBytes);
 
+  // Executive Abstract: Aggregate data by source system
+  const sourceStats = useMemo(() => {
+    const stats: Record<string, { count: number, sizeBytes: number, category: string }> = {};
+    documents.forEach(doc => {
+      let s = doc.source || 'Unknown';
+      let category = 'System Integration';
+      if (s.includes('Gmail')) { s = 'Google Workspace (Gmail)'; category = 'Communication'; }
+      else if (s.includes('Outlook')) { s = 'Microsoft 365 (Outlook)'; category = 'Communication'; }
+      else if (s.includes('Drive')) { s = 'Google Drive'; category = 'Cloud Storage'; }
+      else if (s.includes('Dropbox')) { s = 'Dropbox Enterprise'; category = 'Cloud Storage'; }
+      else if (s.includes('OneDrive')) { s = 'Microsoft OneDrive'; category = 'Cloud Storage'; }
+      else if (s.includes('Clio')) { s = 'Clio Manage'; category = 'Case Management'; }
+      else if (s.includes('MyCase')) { s = 'MyCase Platform'; category = 'Case Management'; }
+      else if (s.includes('Filevine')) { s = 'Filevine Suite'; category = 'Case Management'; }
+
+      if (!stats[s]) stats[s] = { count: 0, sizeBytes: 0, category };
+      stats[s].count += 1;
+      stats[s].sizeBytes += parseSizeToBytes(doc.size);
+    });
+    
+    return Object.entries(stats)
+      .map(([source, data]) => ({
+        source,
+        category: data.category,
+        count: data.count,
+        sizeBytes: data.sizeBytes,
+        formattedSize: formatBytes(data.sizeBytes)
+      }))
+      .sort((a, b) => b.sizeBytes - a.sizeBytes); // Sort by total storage volume
+  }, [documents]);
+
   // Sorting Handler
   const requestSort = (key: keyof Document | 'displayName') => {
     let direction: 'asc' | 'desc' = 'asc';
@@ -214,7 +245,7 @@ export default function CollectionLibraryPage() {
     <div style={{ padding: '40px 48px', maxWidth: 1500, margin: '0 auto', position: 'relative' }}>
       
       {/* ── Dashboard Telemetry Header ── */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 16, marginBottom: 32 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 16, marginBottom: 24 }}>
         
         {/* Title Block */}
         <div style={{ gridColumn: 'span 2', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
@@ -228,25 +259,53 @@ export default function CollectionLibraryPage() {
             </div>
           </div>
           <h1 style={{ fontSize: 28, fontWeight: 800, color: 'var(--text-primary)', letterSpacing: '-0.6px', lineHeight: 1.2 }}>
-            Documents & Logs
+            Data Forensics & Library
           </h1>
         </div>
 
         {/* Metric Cards */}
         <div className="card" style={{ padding: '16px 20px', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
-          <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Total Indexed Files</div>
+          <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Total Indexed Evidence</div>
           <div style={{ fontSize: 24, fontWeight: 800, color: 'var(--text-primary)', marginTop: 4 }}>
             {documents.length.toLocaleString()}
           </div>
         </div>
 
         <div className="card" style={{ padding: '16px 20px', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
-          <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Total Storage Used</div>
+          <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Total Vault Footprint</div>
           <div style={{ fontSize: 24, fontWeight: 800, color: 'var(--text-primary)', marginTop: 4 }}>
             {formattedTotalSize}
           </div>
         </div>
 
+      </div>
+
+      {/* ── Executive Ingestion Abstract ── */}
+      <div className="card animate-fade-in" style={{ padding: '20px 24px', marginBottom: 32, background: 'var(--bg-surface)', border: '1px solid var(--border-medium)' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+          <h2 style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-primary)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+            Ingestion Sources Executive Summary
+          </h2>
+          <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)' }}>Attorney Client Privilege Work Product</span>
+        </div>
+        
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 16 }}>
+          {sourceStats.map(stat => (
+            <div key={stat.source} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 16px', background: 'var(--bg-hover)', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-light)' }}>
+              <div>
+                <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 2 }}>{stat.source}</div>
+                <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase' }}>{stat.category}</div>
+              </div>
+              <div style={{ textAlign: 'right' }}>
+                <div style={{ fontSize: 14, fontWeight: 800, color: 'var(--accent)' }}>{stat.count.toLocaleString()}</div>
+                <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-secondary)' }}>{stat.formattedSize}</div>
+              </div>
+            </div>
+          ))}
+          {sourceStats.length === 0 && (
+            <div style={{ fontSize: 13, color: 'var(--text-muted)' }}>No ingestion sources populated yet.</div>
+          )}
+        </div>
       </div>
 
       {/* ── Toolbar: Search & Tabs ── */}
