@@ -5,7 +5,8 @@
 import fs from 'fs';
 import path from 'path';
 import { google } from 'googleapis';
-import { VAULT_DIR, getToken } from './tokenStore';
+import { PrismaClient } from '@prisma/client';
+import { getUserProviderVaultDir } from './vault';
 import { 
   getNextJob, 
   updateJobProgress, 
@@ -16,6 +17,8 @@ import {
 import { syncClioData, downloadPhysicalFile } from './clioSync';
 import { syncMycaseData } from './mycaseSync';
 import { syncFilevineData } from './filevineSync';
+
+const prisma = new PrismaClient();
 
 
 let workerInterval: NodeJS.Timeout | null = null;
@@ -111,10 +114,19 @@ export function startQueueWorker() {
       console.log(`[Queue Worker] Processing Job ID: ${job.id} (Type: ${job.type})`);
       
       try {
-        const token = getToken(job.type.split('-')[0]);
+        const userId = job.data?.userId;
+        if (!userId) {
+          throw new Error('Job missing userId');
+        }
+
+        const providerName = job.type.split('-')[0];
+        const integration = await prisma.integration.findUnique({
+          where: { userId_platform: { userId, platform: providerName } }
+        });
+        const accessToken = integration?.accessToken;
 
         if (job.type === 'clio-matter-sync') {
-          await syncClioData((msg, count) => {
+          await syncClioData(userId, accessToken || '', (msg, count) => {
             updateJobProgress(job.id, {
               percent: count ? Math.min(100, Math.round((count / 15) * 100)) : 10,
               completed: count ?? 0,
@@ -150,7 +162,7 @@ export function startQueueWorker() {
           const { documentId, name, matterId, token: docToken, size, content_type } = job.data;
           await updateJobProgress(job.id, { percent: 10, completed: 0, total: 1, msg: `Downloading ${name} from Clio...` });
           
-          const CLIO_VAULT = path.join(VAULT_DIR, 'vault', 'clio');
+          const CLIO_VAULT = getUserProviderVaultDir(userId, 'clio');
           const matterDir = path.join(CLIO_VAULT, matterId.toString());
           if (!fs.existsSync(matterDir)) fs.mkdirSync(matterDir, { recursive: true });
 
@@ -187,23 +199,23 @@ export function startQueueWorker() {
           await completeJob(job.id);
 
         } else if (job.type === 'gdrive-sync') {
-          await syncGoogleDrive(job.id, token?.access_token || '');
+          await syncGoogleDrive(job.id, userId, accessToken || '');
           await completeJob(job.id);
 
         } else if (job.type === 'gmail-sync') {
-          await syncGmail(job.id, token?.access_token || '');
+          await syncGmail(job.id, userId, accessToken || '');
           await completeJob(job.id);
 
         } else if (job.type === 'dropbox-sync') {
-          await syncDropbox(job.id, token?.access_token || '');
+          await syncDropbox(job.id, userId, accessToken || '');
           await completeJob(job.id);
 
         } else if (job.type === 'onedrive-sync') {
-          await syncOneDrive(job.id, token?.access_token || '');
+          await syncOneDrive(job.id, userId, accessToken || '');
           await completeJob(job.id);
 
         } else if (job.type === 'outlook-sync') {
-          await syncOutlook(job.id, token?.access_token || '');
+          await syncOutlook(job.id, userId, accessToken || '');
           await completeJob(job.id);
 
 
@@ -235,9 +247,8 @@ export function stopQueueWorker() {
 
 // ─── Real Ingestion Helper Processes ─────────────────────────────────
 
-async function syncGoogleDrive(jobId: string, accessToken: string) {
-  const GDRIVE_VAULT = path.join(VAULT_DIR, 'vault', 'gdrive');
-  if (!fs.existsSync(GDRIVE_VAULT)) fs.mkdirSync(GDRIVE_VAULT, { recursive: true });
+async function syncGoogleDrive(jobId: string, userId: string, accessToken: string) {
+  const GDRIVE_VAULT = getUserProviderVaultDir(userId, 'gdrive');
 
   const docsFile = path.join(GDRIVE_VAULT, 'documents.json');
   let documents: any[] = [];
@@ -361,9 +372,8 @@ async function syncGoogleDrive(jobId: string, accessToken: string) {
   fs.writeFileSync(docsFile, JSON.stringify(documents, null, 2));
 }
 
-async function syncGmail(jobId: string, accessToken: string) {
-  const GMAIL_VAULT = path.join(VAULT_DIR, 'vault', 'gmail');
-  if (!fs.existsSync(GMAIL_VAULT)) fs.mkdirSync(GMAIL_VAULT, { recursive: true });
+async function syncGmail(jobId: string, userId: string, accessToken: string) {
+  const GMAIL_VAULT = getUserProviderVaultDir(userId, 'gmail');
 
   const docsFile = path.join(GMAIL_VAULT, 'documents.json');
   let documents: any[] = [];
@@ -556,9 +566,8 @@ async function syncGmail(jobId: string, accessToken: string) {
   fs.writeFileSync(docsFile, JSON.stringify(documents, null, 2));
 }
 
-async function syncDropbox(jobId: string, accessToken: string) {
-  const DROPBOX_VAULT = path.join(VAULT_DIR, 'vault', 'dropbox');
-  if (!fs.existsSync(DROPBOX_VAULT)) fs.mkdirSync(DROPBOX_VAULT, { recursive: true });
+async function syncDropbox(jobId: string, userId: string, accessToken: string) {
+  const DROPBOX_VAULT = getUserProviderVaultDir(userId, 'dropbox');
 
   const docsFile = path.join(DROPBOX_VAULT, 'documents.json');
   let documents: any[] = [];
@@ -670,9 +679,8 @@ async function syncDropbox(jobId: string, accessToken: string) {
   fs.writeFileSync(docsFile, JSON.stringify(documents, null, 2));
 }
 
-async function syncOneDrive(jobId: string, accessToken: string) {
-  const ONEDRIVE_VAULT = path.join(VAULT_DIR, 'vault', 'onedrive');
-  if (!fs.existsSync(ONEDRIVE_VAULT)) fs.mkdirSync(ONEDRIVE_VAULT, { recursive: true });
+async function syncOneDrive(jobId: string, userId: string, accessToken: string) {
+  const ONEDRIVE_VAULT = getUserProviderVaultDir(userId, 'onedrive');
 
   const docsFile = path.join(ONEDRIVE_VAULT, 'documents.json');
   let documents: any[] = [];
@@ -776,9 +784,8 @@ async function syncOneDrive(jobId: string, accessToken: string) {
   fs.writeFileSync(docsFile, JSON.stringify(documents, null, 2));
 }
 
-async function syncOutlook(jobId: string, accessToken: string) {
-  const OUTLOOK_VAULT = path.join(VAULT_DIR, 'vault', 'outlook');
-  if (!fs.existsSync(OUTLOOK_VAULT)) fs.mkdirSync(OUTLOOK_VAULT, { recursive: true });
+async function syncOutlook(jobId: string, userId: string, accessToken: string) {
+  const OUTLOOK_VAULT = getUserProviderVaultDir(userId, 'outlook');
 
   const docsFile = path.join(OUTLOOK_VAULT, 'documents.json');
   let documents: any[] = [];

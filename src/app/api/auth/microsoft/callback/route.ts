@@ -1,28 +1,39 @@
 // src/app/api/auth/microsoft/callback/route.ts
 import { NextRequest, NextResponse } from 'next/server';
 import { exchangeMicrosoftCode, getMicrosoftUserEmail } from '@/lib/microsoftOAuth';
-import { writeToken } from '@/lib/tokenStore';
+import { auth } from '@clerk/nextjs/server';
+import { PrismaClient } from '@prisma/client';
+
+const prisma = new PrismaClient();
 
 export async function GET(request: NextRequest) {
-  const { searchParams } = request.nextUrl;
+  const { searchParams, origin } = request.nextUrl;
   const code = searchParams.get('code');
   const state = searchParams.get('state');
   const error = searchParams.get('error');
   const errorDesc = searchParams.get('error_description');
 
   if (error) {
-    return NextResponse.redirect(
-      `http://localhost:3000/settings?error=${encodeURIComponent(errorDesc || error)}`
-    );
+    return NextResponse.redirect(`${origin}/settings/integrations?error=${encodeURIComponent(errorDesc || error)}`);
   }
 
   if (!code || !state) {
-    return NextResponse.redirect(
-      `http://localhost:3000/settings?error=${encodeURIComponent('Missing code or state from Microsoft')}`
-    );
+    return NextResponse.redirect(`${origin}/settings/integrations?error=${encodeURIComponent('Missing code or state from Microsoft')}`);
   }
 
   try {
+    const { userId } = auth();
+    if (!userId) {
+      return NextResponse.redirect(`${origin}/settings/integrations?error=${encodeURIComponent('Unauthorized')}`);
+    }
+
+    let dbUser = await prisma.user.findUnique({ where: { clerkId: userId } });
+    if (!dbUser) {
+      dbUser = await prisma.user.create({
+        data: { clerkId: userId, email: 'unknown@' + userId + '.com' }
+      });
+    }
+
     const tokens = await exchangeMicrosoftCode(code, state) as {
       access_token?: string;
       refresh_token?: string;
@@ -34,23 +45,31 @@ export async function GET(request: NextRequest) {
 
     const email = await getMicrosoftUserEmail(tokens.access_token);
 
-    writeToken(state, {
-      access_token: tokens.access_token,
-      refresh_token: tokens.refresh_token,
-      expiry_date: tokens.expires_in ? Date.now() + tokens.expires_in * 1000 : undefined,
-      connected_at: new Date().toISOString(),
-      email,
-      scope: tokens.scope,
+    await prisma.integration.upsert({
+      where: {
+        userId_platform: {
+          userId: dbUser.id,
+          platform: state // 'outlook' or 'onedrive'
+        }
+      },
+      update: {
+        accessToken: tokens.access_token,
+        refreshToken: tokens.refresh_token || null,
+        expiresAt: tokens.expires_in ? new Date(Date.now() + (tokens.expires_in * 1000)) : null
+      },
+      create: {
+        userId: dbUser.id,
+        platform: state,
+        accessToken: tokens.access_token,
+        refreshToken: tokens.refresh_token || null,
+        expiresAt: tokens.expires_in ? new Date(Date.now() + (tokens.expires_in * 1000)) : null
+      }
     });
 
-    return NextResponse.redirect(
-      `http://localhost:3000/settings?connected=${state}&email=${encodeURIComponent(email)}`
-    );
+    return NextResponse.redirect(`${origin}/settings/integrations?connected=${state}&email=${encodeURIComponent(email)}`);
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);
     console.error('[Microsoft OAuth Callback]', message);
-    return NextResponse.redirect(
-      `http://localhost:3000/settings?error=${encodeURIComponent(message)}`
-    );
+    return NextResponse.redirect(`${origin}/settings/integrations?error=${encodeURIComponent(message)}`);
   }
 }

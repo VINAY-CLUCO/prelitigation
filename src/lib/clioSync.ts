@@ -3,11 +3,9 @@
 
 import fs from 'fs';
 import path from 'path';
-import { VAULT_DIR, getToken } from './tokenStore';
+import { getUserProviderVaultDir } from './vault';
 import { isJobPaused } from './queueStore';
 import fetch from 'node-fetch';
-
-const CLIO_VAULT = path.join(VAULT_DIR, 'vault', 'clio');
 
 function isTargetDoc(filename: string): boolean {
   if (!filename) return false;
@@ -136,12 +134,12 @@ export async function downloadPhysicalFile(docId: string, token: string, destina
  * Core Clio Sync Engine.
  * Pulls all matters and documents, downloads physical PDF/DOCX files, and maintains local indexes.
  */
-export async function syncClioData(onProgress?: (msg: string, count?: number) => void, jobId?: string) {
-  const tokenRecord = getToken('clio');
-  if (!tokenRecord?.access_token) {
+export async function syncClioData(userId: string, accessToken: string, onProgress?: (msg: string, count?: number) => void, jobId?: string) {
+  if (!accessToken) {
     throw new Error('Clio is not connected.');
   }
-  const token = tokenRecord.access_token;
+  const token = accessToken;
+  const CLIO_VAULT = getUserProviderVaultDir(userId, 'clio');
 
   if (!fs.existsSync(CLIO_VAULT)) {
     fs.mkdirSync(CLIO_VAULT, { recursive: true });

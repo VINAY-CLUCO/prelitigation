@@ -1,26 +1,37 @@
 // src/app/api/auth/dropbox/callback/route.ts
 import { NextRequest, NextResponse } from 'next/server';
 import { exchangeDropboxCode, getDropboxUserEmail } from '@/lib/dropboxOAuth';
-import { writeToken } from '@/lib/tokenStore';
+import { auth } from '@clerk/nextjs/server';
+import { PrismaClient } from '@prisma/client';
+
+const prisma = new PrismaClient();
 
 export async function GET(request: NextRequest) {
-  const { searchParams } = request.nextUrl;
+  const { searchParams, origin } = request.nextUrl;
   const code = searchParams.get('code');
   const error = searchParams.get('error');
 
   if (error) {
-    return NextResponse.redirect(
-      `http://localhost:3000/settings?error=${encodeURIComponent('Dropbox denied access: ' + error)}`
-    );
+    return NextResponse.redirect(`${origin}/settings/integrations?error=${encodeURIComponent('Dropbox denied access: ' + error)}`);
   }
 
   if (!code) {
-    return NextResponse.redirect(
-      `http://localhost:3000/settings?error=${encodeURIComponent('No code received from Dropbox')}`
-    );
+    return NextResponse.redirect(`${origin}/settings/integrations?error=${encodeURIComponent('No code received from Dropbox')}`);
   }
 
   try {
+    const { userId } = auth();
+    if (!userId) {
+      return NextResponse.redirect(`${origin}/settings/integrations?error=${encodeURIComponent('Unauthorized')}`);
+    }
+
+    let dbUser = await prisma.user.findUnique({ where: { clerkId: userId } });
+    if (!dbUser) {
+      dbUser = await prisma.user.create({
+        data: { clerkId: userId, email: 'unknown@' + userId + '.com' }
+      });
+    }
+
     const tokens = await exchangeDropboxCode(code) as {
       access_token?: string;
       refresh_token?: string;
@@ -31,22 +42,31 @@ export async function GET(request: NextRequest) {
 
     const email = await getDropboxUserEmail(tokens.access_token);
 
-    writeToken('dropbox', {
-      access_token: tokens.access_token,
-      refresh_token: tokens.refresh_token,
-      expiry_date: tokens.expires_in ? Date.now() + tokens.expires_in * 1000 : undefined,
-      connected_at: new Date().toISOString(),
-      email,
+    await prisma.integration.upsert({
+      where: {
+        userId_platform: {
+          userId: dbUser.id,
+          platform: 'dropbox'
+        }
+      },
+      update: {
+        accessToken: tokens.access_token,
+        refreshToken: tokens.refresh_token || null,
+        expiresAt: tokens.expires_in ? new Date(Date.now() + (tokens.expires_in * 1000)) : null
+      },
+      create: {
+        userId: dbUser.id,
+        platform: 'dropbox',
+        accessToken: tokens.access_token,
+        refreshToken: tokens.refresh_token || null,
+        expiresAt: tokens.expires_in ? new Date(Date.now() + (tokens.expires_in * 1000)) : null
+      }
     });
 
-    return NextResponse.redirect(
-      `http://localhost:3000/settings?connected=dropbox&email=${encodeURIComponent(email)}`
-    );
+    return NextResponse.redirect(`${origin}/settings/integrations?connected=dropbox&email=${encodeURIComponent(email)}`);
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);
     console.error('[Dropbox OAuth Callback]', message);
-    return NextResponse.redirect(
-      `http://localhost:3000/settings?error=${encodeURIComponent(message)}`
-    );
+    return NextResponse.redirect(`${origin}/settings/integrations?error=${encodeURIComponent(message)}`);
   }
 }

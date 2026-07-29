@@ -2,20 +2,35 @@
 // Initiates a background sync task in the queue for any connected provider and streams progress using SSE
 
 import { NextResponse } from 'next/server';
-import { getToken } from '@/lib/tokenStore';
 import { addJob, readQueue } from '@/lib/queueStore';
 import { startQueueWorker } from '@/lib/queueWorker';
+import { auth } from '@clerk/nextjs/server';
+import { PrismaClient } from '@prisma/client';
 
+const prisma = new PrismaClient();
 export const dynamic = 'force-dynamic';
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const provider = searchParams.get('provider') || 'clio';
 
-  const token = getToken(provider);
-  
-  // Require active connection token for all providers
-  if (!token) {
+  const { userId } = auth();
+  if (!userId) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+
+  // Find User
+  const dbUser = await prisma.user.findUnique({ where: { clerkId: userId } });
+  if (!dbUser) {
+    return NextResponse.json({ error: 'User not found in DB' }, { status: 404 });
+  }
+
+  // Ensure they have the integration
+  const integration = await prisma.integration.findUnique({
+    where: { userId_platform: { userId: dbUser.id, platform: provider } }
+  });
+
+  if (!integration || !integration.accessToken) {
     return NextResponse.json({ error: `${provider} is not connected.` }, { status: 401 });
   }
 
@@ -33,9 +48,9 @@ export async function GET(request: Request) {
       };
 
       try {
-        // Queue the sync job for this specific provider
+        // Queue the sync job with the dbUser's id
         const jobType = provider === 'clio' ? 'clio-matter-sync' : `${provider}-sync`;
-        const job = await addJob(jobType as any, {});
+        const job = await addJob(jobType as any, { userId: dbUser.id });
         sendEvent(`Sync request for ${provider} initialized. Queued background task...`, 0);
 
         // Poll queue store for updates
