@@ -12,17 +12,17 @@ export async function GET(request: NextRequest) {
   const error = searchParams.get('error');
 
   if (error) {
-    return NextResponse.redirect(`${origin}/settings/integrations?error=${encodeURIComponent(error)}`);
+    return NextResponse.redirect(`https://cluco.vinayk.in/settings/integrations?error=${encodeURIComponent(error)}`);
   }
 
   if (!code) {
-    return NextResponse.redirect(`${origin}/settings/integrations?error=Missing authorization code from Clio`);
+    return NextResponse.redirect(`https://cluco.vinayk.in/settings/integrations?error=Missing authorization code from Clio`);
   }
 
   try {
     const { userId } = await auth();
     if (!userId) {
-      return NextResponse.redirect(`${origin}/settings/integrations?error=${encodeURIComponent('Unauthorized')}`);
+      return NextResponse.redirect(`https://cluco.vinayk.in/settings/integrations?error=${encodeURIComponent('Unauthorized')}`);
     }
 
     let dbUser = await prisma.user.findUnique({ where: { clerkId: userId } });
@@ -61,10 +61,10 @@ export async function GET(request: NextRequest) {
     });
 
     // 4. Redirect back to settings with success message
-    return NextResponse.redirect(`${origin}/settings/integrations?success=Clio connected successfully`);
+    return NextResponse.redirect(`https://cluco.vinayk.in/settings/integrations?success=Clio connected successfully`);
   } catch (err: unknown) {
     console.error('Clio OAuth error:', err);
     const message = err instanceof Error ? err.message : String(err);
-    return NextResponse.redirect(`${origin}/settings/integrations?error=${encodeURIComponent(message)}`);
+    return NextResponse.redirect(`https://cluco.vinayk.in/settings/integrations?error=${encodeURIComponent(message)}`);
   }
 }

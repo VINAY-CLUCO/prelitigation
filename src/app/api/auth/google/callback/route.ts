@@ -16,17 +16,17 @@ export async function GET(request: NextRequest) {
 
   // User denied the permission request
   if (error) {
-    return NextResponse.redirect(`${origin}/settings/integrations?error=${encodeURIComponent('Permission denied: ' + error)}`);
+    return NextResponse.redirect(`https://cluco.vinayk.in/settings/integrations?error=${encodeURIComponent('Permission denied: ' + error)}`);
   }
 
   if (!code || !state) {
-    return NextResponse.redirect(`${origin}/settings/integrations?error=${encodeURIComponent('Missing code or state from Google')}`);
+    return NextResponse.redirect(`https://cluco.vinayk.in/settings/integrations?error=${encodeURIComponent('Missing code or state from Google')}`);
   }
 
   try {
     const { userId } = await auth();
     if (!userId) {
-      return NextResponse.redirect(`${origin}/settings/integrations?error=${encodeURIComponent('Unauthorized')}`);
+      return NextResponse.redirect(`https://cluco.vinayk.in/settings/integrations?error=${encodeURIComponent('Unauthorized')}`);
     }
 
     // Ensure User exists in Prisma
@@ -68,10 +68,10 @@ export async function GET(request: NextRequest) {
       }
     });
 
-    return NextResponse.redirect(`${origin}/settings/integrations?connected=${state}&email=${encodeURIComponent(email)}`);
+    return NextResponse.redirect(`https://cluco.vinayk.in/settings/integrations?connected=${state}&email=${encodeURIComponent(email)}`);
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);
     console.error(`[Google OAuth Callback] Error:`, message);
-    return NextResponse.redirect(`${origin}/settings/integrations?error=${encodeURIComponent(message)}`);
+    return NextResponse.redirect(`https://cluco.vinayk.in/settings/integrations?error=${encodeURIComponent(message)}`);
   }
 }
