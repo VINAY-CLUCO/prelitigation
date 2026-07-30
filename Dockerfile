@@ -12,10 +12,10 @@ FROM base AS builder
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
-# Generate Prisma Client
-RUN npx prisma generate
-# Build Next.js
-ENV NEXT_TELEMETRY_DISABLED 1
+# Set dummy DATABASE_URL for build time only (real one is injected by Railway at runtime)
+ENV DATABASE_URL=file:/tmp/build-dummy.db
+ENV NEXT_TELEMETRY_DISABLED=1
+# prisma generate is now embedded in the build script (package.json)
 RUN npm run build
 
 # Production image, copy all the files and run next
