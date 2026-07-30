@@ -15,19 +15,21 @@ export const metadata: Metadata = {
   description: "Intelligent document onboarding and analysis for pre-litigation legal workflows.",
 };
 
-import { ClerkProvider, SignedIn, SignedOut, RedirectToSignIn } from '@clerk/nextjs'
+import { ClerkProvider } from '@clerk/nextjs'
+import { auth } from '@clerk/nextjs/server'
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  await (await auth()).protect();
+
   return (
     <ClerkProvider>
       <html lang="en" className={inter.variable}>
         <body style={{ fontFamily: 'var(--font-inter), Inter, -apple-system, sans-serif' }}>
-          <SignedIn>
-            <div style={{ display: "flex", minHeight: "100vh" }}>
+          <div style={{ display: "flex", minHeight: "100vh" }}>
               <Sidebar />
               <main
                 style={{
@@ -41,10 +43,6 @@ export default function RootLayout({
                 {children}
               </main>
             </div>
-          </SignedIn>
-          <SignedOut>
-            <RedirectToSignIn />
-          </SignedOut>
         </body>
       </html>
     </ClerkProvider>
