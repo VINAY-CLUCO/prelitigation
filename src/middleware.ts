@@ -2,12 +2,12 @@ import { clerkMiddleware, createRouteMatcher } from '@clerk/nextjs/server'
 
 // Protect all routes under /settings and /collection, but allow /research to be public
 const isProtectedRoute = createRouteMatcher([
-  '/settings(.*)',
+  '/settings(.*)', '/',
   '/collection(.*)'
 ])
 
-export default clerkMiddleware((auth, req) => {
-  if (isProtectedRoute(req)) auth.protect()
+export default clerkMiddleware(async (auth, req) => {
+  if (isProtectedRoute(req)) await auth.protect()
 })
 
 export const config = {
