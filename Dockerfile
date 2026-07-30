@@ -48,4 +48,5 @@ ENV HOSTNAME "0.0.0.0"
 
 # Note: Railway handles running the start script via package.json usually, 
 # but for Docker we run the standalone server.
-CMD ["node", "server.js"]
+# We must push the database schema to the persistent volume before starting.
+CMD npx prisma db push --skip-generate && node server.js
