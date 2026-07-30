@@ -15,7 +15,7 @@ export const metadata: Metadata = {
   description: "Intelligent document onboarding and analysis for pre-litigation legal workflows.",
 };
 
-import { ClerkProvider } from '@clerk/nextjs'
+import { ClerkProvider, SignedIn, SignedOut, RedirectToSignIn } from '@clerk/nextjs'
 
 export default function RootLayout({
   children,
@@ -26,20 +26,25 @@ export default function RootLayout({
     <ClerkProvider>
       <html lang="en" className={inter.variable}>
         <body style={{ fontFamily: 'var(--font-inter), Inter, -apple-system, sans-serif' }}>
-          <div style={{ display: "flex", minHeight: "100vh" }}>
-            <Sidebar />
-            <main
-              style={{
-                marginLeft: "var(--sidebar-width)",
-                flex: 1,
-                minHeight: "100vh",
-                overflow: "auto",
-                backgroundColor: "transparent",
-              }}
-            >
-              {children}
-            </main>
-          </div>
+          <SignedIn>
+            <div style={{ display: "flex", minHeight: "100vh" }}>
+              <Sidebar />
+              <main
+                style={{
+                  marginLeft: "var(--sidebar-width)",
+                  flex: 1,
+                  minHeight: "100vh",
+                  overflow: "auto",
+                  backgroundColor: "transparent",
+                }}
+              >
+                {children}
+              </main>
+            </div>
+          </SignedIn>
+          <SignedOut>
+            <RedirectToSignIn />
+          </SignedOut>
         </body>
       </html>
     </ClerkProvider>
