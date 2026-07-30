@@ -98,7 +98,7 @@ export default function IntegrationsPage() {
           <div key={integration.id} style={{ 
             display: 'flex', alignItems: 'center', justifyContent: 'space-between', 
             padding: 24, borderRadius: 12, backgroundColor: 'white', 
-            border: \`1px solid \${integration.connected ? 'var(--border-medium)' : 'var(--border-light)'}\`,
+            border: integration.connected ? '1px solid var(--border-medium)' : '1px solid var(--border-light)',
             boxShadow: '0 2px 10px rgba(0,0,0,0.02)'
           }}>
             <div style={{ display: 'flex', gap: 16 }}>
