@@ -23,26 +23,26 @@ export default async function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
-  await auth.protect();
+  const { userId } = await auth();
 
   return (
     <ClerkProvider>
       <html lang="en" className={inter.variable}>
         <body style={{ fontFamily: 'var(--font-inter), Inter, -apple-system, sans-serif' }}>
           <div style={{ display: "flex", minHeight: "100vh" }}>
-              <Sidebar />
-              <main
-                style={{
-                  marginLeft: "var(--sidebar-width)",
-                  flex: 1,
-                  minHeight: "100vh",
-                  overflow: "auto",
-                  backgroundColor: "transparent",
-                }}
-              >
-                {children}
-              </main>
-            </div>
+            {userId && <Sidebar />}
+            <main
+              style={{
+                marginLeft: userId ? "var(--sidebar-width)" : 0,
+                flex: 1,
+                minHeight: "100vh",
+                overflow: "auto",
+                backgroundColor: "transparent",
+              }}
+            >
+              {children}
+            </main>
+          </div>
         </body>
       </html>
     </ClerkProvider>
