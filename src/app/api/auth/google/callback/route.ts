@@ -9,6 +9,9 @@ import { PrismaClient } from '@prisma/client';
 const prisma = new PrismaClient();
 
 export async function GET(request: NextRequest) {
+  const { userId } = await auth();
+  if (!userId) return new Response('Unauthorized', { status: 401 });
+
   const { searchParams, origin } = request.nextUrl;
   const code = searchParams.get('code');
   const state = searchParams.get('state'); // 'gdrive' or 'gmail'

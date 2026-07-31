@@ -1,7 +1,11 @@
+import { auth } from '@clerk/nextjs/server';
 import { NextResponse } from 'next/server';
 import { readQueue, pauseJob } from '@/lib/queueStore';
 
 export async function POST(req: Request) {
+  const { userId } = await auth();
+  if (!userId) return new Response('Unauthorized', { status: 401 });
+
   try {
     let provider: string;
     try {

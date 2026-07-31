@@ -1,3 +1,4 @@
+import { auth } from '@clerk/nextjs/server';
 // src/app/api/connections/clio/sync/route.ts
 // Initiates a background Clio sync job in the queue and streams status updates in real-time over SSE
 
@@ -9,7 +10,10 @@ import { startQueueWorker } from '@/lib/queueWorker';
 export const dynamic = 'force-dynamic';
 
 export async function GET(request: Request) {
-  const token = getToken('clio');
+  const { userId } = await auth();
+  if (!userId) return new Response('Unauthorized', { status: 401 });
+
+  const token = getToken(userId, 'clio');
   if (!token) {
     return NextResponse.json({ error: 'Clio is not connected.' }, { status: 401 });
   }

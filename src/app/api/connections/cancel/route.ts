@@ -1,3 +1,4 @@
+import { auth } from '@clerk/nextjs/server';
 // src/app/api/connections/cancel/route.ts
 // Cancels all active queue jobs for a given provider.
 // Called by the frontend when a user disconnects while a sync is in progress.
@@ -6,6 +7,9 @@ import { NextRequest, NextResponse } from 'next/server';
 import { cancelJobsByProvider } from '@/lib/queueStore';
 
 export async function POST(request: NextRequest) {
+  const { userId } = await auth();
+  if (!userId) return new Response('Unauthorized', { status: 401 });
+
   try {
     const body = await request.json();
     const provider = body?.provider as string | undefined;

@@ -1,9 +1,13 @@
+import { auth } from '@clerk/nextjs/server';
 // src/app/api/auth/filevine/callback/route.ts
 import { NextRequest, NextResponse } from 'next/server';
 import { exchangeFilevineCode, getFilevineUserEmail } from '@/lib/filevineOAuth';
 import { writeToken } from '@/lib/tokenStore';
 
 export async function GET(request: NextRequest) {
+  const { userId } = await auth();
+  if (!userId) return new Response('Unauthorized', { status: 401 });
+
   const code = request.nextUrl.searchParams.get('code');
   const error = request.nextUrl.searchParams.get('error');
 
@@ -19,7 +23,7 @@ export async function GET(request: NextRequest) {
     const tokenData = await exchangeFilevineCode(code);
     const email = await getFilevineUserEmail(tokenData.access_token);
 
-    writeToken('filevine', {
+    writeToken(userId, 'filevine', {
       access_token: tokenData.access_token,
       refresh_token: tokenData.refresh_token,
       expiry_date: Date.now() + ((tokenData.expires_in || 3600) * 1000),

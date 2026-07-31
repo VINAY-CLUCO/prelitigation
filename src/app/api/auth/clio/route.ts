@@ -1,8 +1,12 @@
+import { auth } from '@clerk/nextjs/server';
 // src/app/api/auth/clio/route.ts
 import { NextResponse } from 'next/server';
 import { buildClioAuthUrl } from '@/lib/clioOAuth';
 
 export async function GET() {
+  const { userId } = await auth();
+  if (!userId) return new Response('Unauthorized', { status: 401 });
+
   try {
     const authUrl = buildClioAuthUrl();
     // Redirect the browser to Clio's OAuth consent screen

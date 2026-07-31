@@ -1,3 +1,4 @@
+import { auth } from '@clerk/nextjs/server';
 // src/app/api/connections/disconnect/[provider]/route.ts
 // Revokes the token at the provider's end, removes it from the local store,
 // AND wipes all locally downloaded vault files for that provider.
@@ -14,6 +15,9 @@ export async function DELETE(
   _request: NextRequest,
   { params }: { params: Promise<{ provider: string }> }
 ) {
+  const { userId } = await auth();
+  if (!userId) return new Response('Unauthorized', { status: 401 });
+
   const { provider } = await params;
   const token = getToken(provider);
 
@@ -42,7 +46,7 @@ export async function DELETE(
     deleteToken(provider);
 
     // 3. Wipe all locally downloaded vault files for this provider
-    const vaultPath = path.join(VAULT_DIR, 'vault', provider);
+    const vaultPath = path.join(VAULT_DIR, 'vault', userId, provider);
     if (fs.existsSync(vaultPath)) {
       try {
         fs.rmSync(vaultPath, { recursive: true, force: true });
@@ -61,7 +65,7 @@ export async function DELETE(
     console.error(`[Disconnect ${provider}]`, message);
     // Even if revoke fails, always delete locally so user can reconnect
     deleteToken(provider);
-    const vaultPath = path.join(VAULT_DIR, 'vault', provider);
+    const vaultPath = path.join(VAULT_DIR, 'vault', userId, provider);
     if (fs.existsSync(vaultPath)) {
       try { fs.rmSync(vaultPath, { recursive: true, force: true }); } catch {}
     }

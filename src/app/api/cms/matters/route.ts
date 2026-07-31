@@ -1,3 +1,4 @@
+import { auth } from '@clerk/nextjs/server';
 import { NextResponse } from 'next/server';
 import fs from 'fs';
 import path from 'path';
@@ -6,20 +7,26 @@ import { createClioContact, createClioMatter, updateClioMatterStatus } from '@/l
 
 export const dynamic = 'force-dynamic';
 
-const CLIO_VAULT = path.join(VAULT_DIR, 'vault', 'clio');
+function getClioVault(userId: string) {
+  return path.join(VAULT_DIR, 'vault', userId, 'clio');
+}
 
 // Ensure vault directory exists
-function ensureVaultDir() {
-  if (!fs.existsSync(CLIO_VAULT)) {
-    fs.mkdirSync(CLIO_VAULT, { recursive: true });
+function ensureVaultDir(userId: string) {
+  const vaultDir = getClioVault(userId);
+  if (!fs.existsSync(vaultDir)) {
+    fs.mkdirSync(vaultDir, { recursive: true });
   }
 }
 
 export async function GET() {
-  ensureVaultDir();
+  const { userId } = await auth();
+  if (!userId) return new Response('Unauthorized', { status: 401 });
+
+  ensureVaultDir(userId);
   
-  const clioToken = getToken('clio');
-  const clioMatters = getLocalMatters(CLIO_VAULT, 'clio');
+  const clioToken = getToken(userId, 'clio');
+  const clioMatters = getLocalMatters(getClioVault(userId), 'clio');
 
   // Sort by open date descending
   clioMatters.sort((a, b) => new Date(b.open_date).getTime() - new Date(a.open_date).getTime());
@@ -33,6 +40,9 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
+  const { userId } = await auth();
+  if (!userId) return new Response('Unauthorized', { status: 401 });
+
   try {
     const body = await request.json();
     const { clientName, clientEmail, clientPhone, matterDescription } = body;
@@ -41,7 +51,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Client Name and Matter Description are required.' }, { status: 400 });
     }
 
-    const token = getToken('clio');
+    const token = getToken(userId, 'clio');
     let finalMatterId = String(Date.now());
     let displayNum = `CLO-${Math.floor(100000 + Math.random() * 900000)}`;
     let clientData = { id: Date.now(), name: clientName };
@@ -62,8 +72,8 @@ export async function POST(request: Request) {
     }
 
     // Write locally
-    ensureVaultDir();
-    const newMatterDir = path.join(CLIO_VAULT, finalMatterId);
+    ensureVaultDir(userId);
+    const newMatterDir = path.join(getClioVault(userId), finalMatterId);
     
     if (!fs.existsSync(newMatterDir)) {
       fs.mkdirSync(newMatterDir, { recursive: true });
@@ -101,6 +111,9 @@ export async function POST(request: Request) {
 }
 
 export async function PATCH(request: Request) {
+  const { userId } = await auth();
+  if (!userId) return new Response('Unauthorized', { status: 401 });
+
   try {
     const body = await request.json();
     const { matterId, status } = body;
@@ -109,8 +122,8 @@ export async function PATCH(request: Request) {
       return NextResponse.json({ error: 'Matter ID and Status are required.' }, { status: 400 });
     }
 
-    ensureVaultDir();
-    const matterDir = path.join(CLIO_VAULT, matterId);
+    ensureVaultDir(userId);
+    const matterDir = path.join(getClioVault(userId), matterId);
     const matterFile = path.join(matterDir, 'matter.json');
 
     if (!fs.existsSync(matterFile)) {
@@ -128,7 +141,7 @@ export async function PATCH(request: Request) {
     }
 
     // Update via Clio API if live
-    const token = getToken('clio');
+    const token = getToken(userId, 'clio');
     if (token?.access_token) {
       try {
         await updateClioMatterStatus(matterId, normalizedStatus);

@@ -1,3 +1,4 @@
+import { auth } from '@clerk/nextjs/server';
 import { NextResponse } from 'next/server';
 import fs from 'fs';
 import path from 'path';
@@ -8,6 +9,9 @@ import { startQueueWorker } from '@/lib/queueWorker';
 export const dynamic = 'force-dynamic';
 
 export async function POST(request: Request) {
+  const { userId } = await auth();
+  if (!userId) return new Response('Unauthorized', { status: 401 });
+
   // Lazily start background worker loop inside Next.js process
   startQueueWorker();
 
@@ -19,7 +23,7 @@ export async function POST(request: Request) {
       // Empty or invalid JSON is common for simple webhook pings from some providers
       return NextResponse.json({ status: 'ignored', message: 'No JSON body' });
     }
-    const tokenRecord = getToken('clio');
+    const tokenRecord = getToken(userId, 'clio');
     
     if (!tokenRecord?.access_token) {
       console.warn('[Webhook] Rejected: Clio access token not found locally.');
@@ -34,7 +38,7 @@ export async function POST(request: Request) {
           const matterId = docData?.matter?.id;
           
           if (matterId) {
-            const CLIO_VAULT = path.join(VAULT_DIR, 'vault', 'clio');
+            const CLIO_VAULT = path.join(VAULT_DIR, 'vault', userId, 'clio');
             const matterFolder = path.join(CLIO_VAULT, matterId.toString());
             
             // Queue document ingestion job

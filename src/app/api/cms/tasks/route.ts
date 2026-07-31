@@ -1,16 +1,22 @@
+import { auth } from '@clerk/nextjs/server';
 import { NextResponse } from 'next/server';
 import fs from 'fs';
 import path from 'path';
 import { VAULT_DIR, getToken } from '@/lib/tokenStore';
 import { createClioTask, completeClioTask } from '@/lib/clioPush';
 
-const CLIO_VAULT = path.join(VAULT_DIR, 'vault', 'clio');
+function getClioVault(userId: string) {
+  return path.join(VAULT_DIR, 'vault', userId, 'clio');
+}
 
-function getMatterDir(matterId: string | number): string {
-  return path.join(CLIO_VAULT, String(matterId));
+function getMatterDir(userId: string, matterId: string | number): string {
+  return path.join(getClioVault(userId), String(matterId));
 }
 
 export async function POST(request: Request) {
+  const { userId } = await auth();
+  if (!userId) return new Response('Unauthorized', { status: 401 });
+
   try {
     const body = await request.json();
     const { matterId, name, dueAt } = body;
@@ -19,8 +25,8 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Matter ID and Task Name are required.' }, { status: 400 });
     }
 
-    const matterDir = getMatterDir(matterId);
-    const token = getToken('clio');
+    const matterDir = getMatterDir(userId, matterId);
+    const token = getToken(userId, 'clio');
     let finalTaskId = String(Date.now());
 
     // Push to Clio API if live token present
@@ -60,6 +66,9 @@ export async function POST(request: Request) {
 }
 
 export async function PATCH(request: Request) {
+  const { userId } = await auth();
+  if (!userId) return new Response('Unauthorized', { status: 401 });
+
   try {
     const body = await request.json();
     const { matterId, taskId, complete } = body;
@@ -68,8 +77,8 @@ export async function PATCH(request: Request) {
       return NextResponse.json({ error: 'Matter ID and Task ID are required.' }, { status: 400 });
     }
 
-    const matterDir = getMatterDir(matterId);
-    const token = getToken('clio');
+    const matterDir = getMatterDir(userId, matterId);
+    const token = getToken(userId, 'clio');
 
     // Update Clio API if live token present
     if (token?.access_token) {

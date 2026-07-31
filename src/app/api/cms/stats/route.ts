@@ -1,3 +1,4 @@
+import { auth } from '@clerk/nextjs/server';
 // src/app/api/cms/stats/route.ts
 // Computes live pipeline analytics, recent documents, and event logs from local folders and task queue state
 
@@ -9,12 +10,14 @@ import { readQueue } from '@/lib/queueStore';
 
 export const dynamic = 'force-dynamic';
 
-const CLIO_VAULT = path.join(VAULT_DIR, 'vault', 'clio');
 
 let cachedStats: { timestamp: number; payload: any } | null = null;
 const CACHE_TTL_MS = 2000;
 
 export async function GET() {
+  const { userId } = await auth();
+  if (!userId) return new Response('Unauthorized', { status: 401 });
+
   const now = Date.now();
   if (cachedStats && (now - cachedStats.timestamp < CACHE_TTL_MS)) {
     return NextResponse.json(cachedStats.payload);
@@ -114,16 +117,16 @@ export async function GET() {
   };
 
   // Scan case managers
-  scanVault(path.join(VAULT_DIR, 'vault', 'clio'), 'Clio Manage');
-  scanVault(path.join(VAULT_DIR, 'vault', 'mycase'), 'MyCase');
-  scanVault(path.join(VAULT_DIR, 'vault', 'filevine'), 'Filevine');
+  scanVault(path.join(VAULT_DIR, 'vault', userId, 'clio'), 'Clio Manage');
+  scanVault(path.join(VAULT_DIR, 'vault', userId, 'mycase'), 'MyCase');
+  scanVault(path.join(VAULT_DIR, 'vault', userId, 'filevine'), 'Filevine');
 
   // Scan cloud drives and mail archives
-  scanDirectVault(path.join(VAULT_DIR, 'vault', 'gdrive'), 'Google Drive');
-  scanDirectVault(path.join(VAULT_DIR, 'vault', 'gmail'), 'Gmail');
-  scanDirectVault(path.join(VAULT_DIR, 'vault', 'onedrive'), 'OneDrive');
-  scanDirectVault(path.join(VAULT_DIR, 'vault', 'outlook'), 'Outlook');
-  scanDirectVault(path.join(VAULT_DIR, 'vault', 'dropbox'), 'Dropbox');
+  scanDirectVault(path.join(VAULT_DIR, 'vault', userId, 'gdrive'), 'Google Drive');
+  scanDirectVault(path.join(VAULT_DIR, 'vault', userId, 'gmail'), 'Gmail');
+  scanDirectVault(path.join(VAULT_DIR, 'vault', userId, 'onedrive'), 'OneDrive');
+  scanDirectVault(path.join(VAULT_DIR, 'vault', userId, 'outlook'), 'Outlook');
+  scanDirectVault(path.join(VAULT_DIR, 'vault', userId, 'dropbox'), 'Dropbox');
   
   // Read queue states
   const pendingJobsCount = queue.filter(j => j.status === 'pending' || j.status === 'processing').length;

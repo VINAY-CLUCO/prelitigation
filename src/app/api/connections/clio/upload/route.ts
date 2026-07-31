@@ -1,10 +1,14 @@
+import { auth } from '@clerk/nextjs/server';
 import { NextResponse } from 'next/server';
 import { getToken } from '@/lib/tokenStore';
 
 export const dynamic = 'force-dynamic';
 
 export async function POST(request: Request) {
-  const token = getToken('clio');
+  const { userId } = await auth();
+  if (!userId) return new Response('Unauthorized', { status: 401 });
+
+  const token = getToken(userId, 'clio');
   if (!token?.access_token) {
     return NextResponse.json({ error: 'Clio is not connected' }, { status: 401 });
   }
@@ -120,7 +124,7 @@ export async function POST(request: Request) {
       const fs = require('fs');
       const path = require('path');
 
-      const CLIO_VAULT = path.join(VAULT_DIR, 'vault', 'clio');
+      const CLIO_VAULT = path.join(VAULT_DIR, 'vault', userId, 'clio');
       const matterDir = path.join(CLIO_VAULT, String(matterId));
       const docsFile = path.join(matterDir, 'documents.json');
 

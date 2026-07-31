@@ -25,34 +25,43 @@ function ensureVaultDir() {
   }
 }
 
-export function readTokens(): TokenStore {
+function getTokenFile(userId: string) {
+  return path.join(VAULT_DIR, `${userId}_tokens.json`);
+}
+
+export function readTokens(userId: string): TokenStore {
+  if (!userId) return {};
   try {
     ensureVaultDir();
-    if (!fs.existsSync(TOKEN_FILE)) return {};
-    const raw = fs.readFileSync(TOKEN_FILE, 'utf-8');
+    const file = getTokenFile(userId);
+    if (!fs.existsSync(file)) return {};
+    const raw = fs.readFileSync(file, 'utf-8');
     return JSON.parse(raw) as TokenStore;
   } catch {
     return {};
   }
 }
 
-export function getToken(provider: string): ProviderToken | null {
-  const tokens = readTokens();
+export function getToken(userId: string, provider: string): ProviderToken | null {
+  if (!userId) return null;
+  const tokens = readTokens(userId);
   return tokens[provider] ?? null;
 }
 
-export function writeToken(provider: string, token: ProviderToken): void {
+export function writeToken(userId: string, provider: string, token: ProviderToken): void {
+  if (!userId) return;
   ensureVaultDir();
-  const tokens = readTokens();
+  const tokens = readTokens(userId);
   tokens[provider] = token;
-  fs.writeFileSync(TOKEN_FILE, JSON.stringify(tokens, null, 2), 'utf-8');
+  fs.writeFileSync(getTokenFile(userId), JSON.stringify(tokens, null, 2), 'utf-8');
 }
 
-export function deleteToken(provider: string): void {
+export function deleteToken(userId: string, provider: string): void {
+  if (!userId) return;
   ensureVaultDir();
-  const tokens = readTokens();
+  const tokens = readTokens(userId);
   delete tokens[provider];
-  fs.writeFileSync(TOKEN_FILE, JSON.stringify(tokens, null, 2), 'utf-8');
+  fs.writeFileSync(getTokenFile(userId), JSON.stringify(tokens, null, 2), 'utf-8');
 }
 
 export function isTokenExpired(token: ProviderToken): boolean {

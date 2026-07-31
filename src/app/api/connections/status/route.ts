@@ -1,3 +1,4 @@
+import { auth } from '@clerk/nextjs/server';
 // src/app/api/connections/status/route.ts
 // Returns the real connection state for all providers by reading ~/.cluco/tokens.json and directory file counts
 
@@ -11,6 +12,9 @@ let cachedStatus: { timestamp: number; payload: any } | null = null;
 const CACHE_TTL_MS = 2000;
 
 export async function GET() {
+  const { userId } = await auth();
+  if (!userId) return new Response('Unauthorized', { status: 401 });
+
   const now = Date.now();
   if (cachedStatus && (now - cachedStatus.timestamp < CACHE_TTL_MS)) {
     return NextResponse.json(cachedStatus.payload);
@@ -19,7 +23,7 @@ export async function GET() {
   // Start the background worker daemon upon app status load
   startQueueWorker();
 
-  const tokens = readTokens();
+  const tokens = readTokens(userId);
 
   const status: Record<string, {
     connected: boolean;
@@ -33,7 +37,7 @@ export async function GET() {
     let docsIngested = 0;
     
     try {
-      const vaultPath = path.join(VAULT_DIR, 'vault', provider);
+      const vaultPath = path.join(VAULT_DIR, 'vault', userId, provider);
       if (provider === 'clio') {
         if (fs.existsSync(vaultPath)) {
           const matters = fs.readdirSync(vaultPath);

@@ -1,8 +1,12 @@
+import { auth } from '@clerk/nextjs/server';
 // src/app/api/auth/mycase/route.ts
 import { NextResponse } from 'next/server';
 import { buildMycaseAuthUrl } from '@/lib/mycaseOAuth';
 
 export async function GET() {
+  const { userId } = await auth();
+  if (!userId) return new Response('Unauthorized', { status: 401 });
+
   try {
     const authUrl = buildMycaseAuthUrl();
     return NextResponse.redirect(authUrl);

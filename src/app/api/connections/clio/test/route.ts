@@ -1,3 +1,4 @@
+import { auth } from '@clerk/nextjs/server';
 import { NextResponse } from 'next/server';
 import { getToken } from '@/lib/tokenStore';
 import { 
@@ -12,7 +13,10 @@ import {
 export const dynamic = 'force-dynamic';
 
 export async function GET() {
-  const token = getToken('clio');
+  const { userId } = await auth();
+  if (!userId) return new Response('Unauthorized', { status: 401 });
+
+  const token = getToken(userId, 'clio');
   const results: Record<string, any> = {
     connection: token ? 'Connected (Live Mode)' : 'Disconnected (Mock Mode)',
     steps: []

@@ -11,13 +11,11 @@ const prisma = new PrismaClient();
 export const dynamic = 'force-dynamic';
 
 export async function GET(request: Request) {
+  const { userId } = await auth();
+  if (!userId) return new Response('Unauthorized', { status: 401 });
+
   const { searchParams } = new URL(request.url);
   const provider = searchParams.get('provider') || 'clio';
-
-  const { userId } = await auth();
-  if (!userId) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  }
 
   // Find User
   const dbUser = await prisma.user.findUnique({ where: { clerkId: userId } });

@@ -1,3 +1,4 @@
+import { auth } from '@clerk/nextjs/server';
 // src/app/api/connections/clio/download/route.ts
 // Universal Document Download Handler for Clio & Local Vault Files
 
@@ -10,6 +11,9 @@ import { VAULT_DIR, getToken } from '@/lib/tokenStore';
 export const dynamic = 'force-dynamic';
 
 export async function GET(request: Request) {
+  const { userId } = await auth();
+  if (!userId) return new Response('Unauthorized', { status: 401 });
+
   const url = new URL(request.url);
   const docId = url.searchParams.get('docId') || '';
   const docName = url.searchParams.get('name') || 'document.pdf';
@@ -20,12 +24,12 @@ export async function GET(request: Request) {
 
   // 1. Search local vault directories for matching physical file
   const searchDirs = [
-    path.join(VAULT_DIR, 'vault', 'clio'),
-    path.join(VAULT_DIR, 'vault', 'gdrive'),
-    path.join(VAULT_DIR, 'vault', 'gmail'),
-    path.join(VAULT_DIR, 'vault', 'dropbox'),
-    path.join(VAULT_DIR, 'vault', 'onedrive'),
-    path.join(VAULT_DIR, 'vault', 'outlook')
+    path.join(VAULT_DIR, 'vault', userId, 'clio'),
+    path.join(VAULT_DIR, 'vault', userId, 'gdrive'),
+    path.join(VAULT_DIR, 'vault', userId, 'gmail'),
+    path.join(VAULT_DIR, 'vault', userId, 'dropbox'),
+    path.join(VAULT_DIR, 'vault', userId, 'onedrive'),
+    path.join(VAULT_DIR, 'vault', userId, 'outlook')
   ];
 
   function findPhysicalFileInVault(dir: string): string | null {
@@ -81,7 +85,7 @@ export async function GET(request: Request) {
   }
 
   // 2. Try real Clio API download
-  const token = getToken('clio');
+  const token = getToken(userId, 'clio');
   if (token?.access_token && docId) {
     try {
       const clioUrl = `https://app.clio.com/api/v4/documents/${docId}/download`;

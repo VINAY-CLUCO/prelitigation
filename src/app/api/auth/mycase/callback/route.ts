@@ -1,9 +1,13 @@
+import { auth } from '@clerk/nextjs/server';
 // src/app/api/auth/mycase/callback/route.ts
 import { NextRequest, NextResponse } from 'next/server';
 import { exchangeMycaseCode, getMycaseUserEmail } from '@/lib/mycaseOAuth';
 import { writeToken } from '@/lib/tokenStore';
 
 export async function GET(request: NextRequest) {
+  const { userId } = await auth();
+  if (!userId) return new Response('Unauthorized', { status: 401 });
+
   const code = request.nextUrl.searchParams.get('code');
   const error = request.nextUrl.searchParams.get('error');
 
@@ -19,7 +23,7 @@ export async function GET(request: NextRequest) {
     const tokenData = await exchangeMycaseCode(code);
     const email = await getMycaseUserEmail(tokenData.access_token);
 
-    writeToken('mycase', {
+    writeToken(userId, 'mycase', {
       access_token: tokenData.access_token,
       refresh_token: tokenData.refresh_token,
       expiry_date: Date.now() + ((tokenData.expires_in || 3600) * 1000),

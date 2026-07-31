@@ -7,6 +7,9 @@ import { PrismaClient } from '@prisma/client';
 const prisma = new PrismaClient();
 
 export async function GET(request: NextRequest) {
+  const { userId } = await auth();
+  if (!userId) return new Response('Unauthorized', { status: 401 });
+
   const { searchParams, origin } = request.nextUrl;
   const code = searchParams.get('code');
   const error = searchParams.get('error');
@@ -58,6 +61,17 @@ export async function GET(request: NextRequest) {
         refreshToken: tokenData.refresh_token || null,
         expiresAt: tokenData.expires_in ? new Date(Date.now() + (tokenData.expires_in * 1000)) : null
       }
+      }
+    });
+
+    // Also save to file system vault for backward compatibility with local dashboard routes
+    const { writeToken } = require('@/lib/tokenStore');
+    writeToken(userId, 'clio', {
+      access_token: tokenData.access_token,
+      refresh_token: tokenData.refresh_token,
+      expiry_date: tokenData.expires_in ? Date.now() + tokenData.expires_in * 1000 : undefined,
+      connected_at: new Date().toISOString(),
+      email: email
     });
 
     // 4. Redirect back to settings with success message

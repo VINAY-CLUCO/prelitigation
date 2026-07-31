@@ -1,8 +1,12 @@
+import { auth } from '@clerk/nextjs/server';
 // src/app/api/auth/microsoft/route.ts
 import { NextRequest, NextResponse } from 'next/server';
 import { buildMicrosoftAuthUrl } from '@/lib/microsoftOAuth';
 
 export async function GET(request: NextRequest) {
+  const { userId } = await auth();
+  if (!userId) return new Response('Unauthorized', { status: 401 });
+
   const provider = request.nextUrl.searchParams.get('provider') as 'onedrive' | 'outlook' | null;
 
   if (!provider || !['onedrive', 'outlook'].includes(provider)) {
