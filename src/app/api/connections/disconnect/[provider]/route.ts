@@ -19,7 +19,7 @@ export async function DELETE(
   if (!userId) return new Response('Unauthorized', { status: 401 });
 
   const { provider } = await params;
-  const token = getToken(provider);
+  const token = getToken(userId, provider);
 
   if (!token) {
     return NextResponse.json({ error: 'Not connected' }, { status: 404 });
@@ -43,7 +43,7 @@ export async function DELETE(
     // Microsoft and Dropbox: just delete locally
 
     // 2. Delete the token from the store
-    deleteToken(provider);
+    deleteToken(userId, provider);
 
     // 3. Wipe all locally downloaded vault files for this provider
     const vaultPath = path.join(VAULT_DIR, 'vault', userId, provider);
@@ -64,7 +64,7 @@ export async function DELETE(
     const message = err instanceof Error ? err.message : String(err);
     console.error(`[Disconnect ${provider}]`, message);
     // Even if revoke fails, always delete locally so user can reconnect
-    deleteToken(provider);
+    deleteToken(userId, provider);
     const vaultPath = path.join(VAULT_DIR, 'vault', userId, provider);
     if (fs.existsSync(vaultPath)) {
       try { fs.rmSync(vaultPath, { recursive: true, force: true }); } catch {}
