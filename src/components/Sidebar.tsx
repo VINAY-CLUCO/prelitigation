@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import { UserButton } from '@clerk/nextjs';
 
 const navItems = [
   {
@@ -246,23 +247,13 @@ export default function Sidebar() {
           display: 'flex',
           alignItems: 'center',
           gap: 12,
-          cursor: 'pointer',
-          transition: 'background var(--transition-fast)',
-        }}
-          onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--bg-hover)')}
-          onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
-        >
-          <div style={{
-            width: 28, height: 28, borderRadius: 4,
-            background: 'var(--bg-hover)', border: '1px solid var(--border-medium)',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            fontSize: 13, fontWeight: 600, color: 'var(--text-secondary)', flexShrink: 0
-          }}>
-            V
-          </div>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>Vinay Workspace</div>
-          </div>
+        }}>
+          <UserButton showName={true} appearance={{
+            elements: {
+              userButtonBox: "flex flex-row-reverse w-full justify-between",
+              userButtonOuterIdentifier: "text-[13px] font-medium text-[var(--text-primary)]"
+            }
+          }} />
         </div>
       </div>
     </aside>
