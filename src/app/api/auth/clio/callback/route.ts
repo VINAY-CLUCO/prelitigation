@@ -61,7 +61,6 @@ export async function GET(request: NextRequest) {
         refreshToken: tokenData.refresh_token || null,
         expiresAt: tokenData.expires_in ? new Date(Date.now() + (tokenData.expires_in * 1000)) : null
       }
-      }
     });
 
     // Also save to file system vault for backward compatibility with local dashboard routes
