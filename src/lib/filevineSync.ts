@@ -69,8 +69,8 @@ async function filevineFetch(url: string, token: string, retries = 5): Promise<a
 /**
  * Main Sync Function
  */
-export async function syncFilevineData(onProgress: (msg: string, count?: number) => void, jobId?: string) {
-  const tokenData = getToken('filevine');
+export async function syncFilevineData(userId: string, onProgress: (msg: string, count?: number) => void, jobId?: string) {
+  const tokenData = getToken(userId, 'filevine');
   if (!tokenData || !tokenData.access_token) {
     throw new Error('Filevine is not connected or token is missing.');
   }

@@ -1,4 +1,5 @@
 import { getToken } from './tokenStore';
+import { auth } from '@clerk/nextjs/server';
 
 function getHeaders(token: string) {
   return {
@@ -12,7 +13,9 @@ function getHeaders(token: string) {
  * Pushes a new Note directly into a Clio Matter.
  */
 export async function createMatterNote(matterId: string | number, text: string): Promise<any> {
-  const token = getToken('clio');
+  const { userId } = await auth();
+  if (!userId) throw new Error("Unauthorized");
+  const token = getToken(userId, 'clio');
   if (!token?.access_token) {
     throw new Error("Cannot push to Clio: No active connection found.");
   }
@@ -47,7 +50,9 @@ export async function createMatterNote(matterId: string | number, text: string):
  * Creates a new Contact in Clio Manage.
  */
 export async function createClioContact(name: string, email?: string, phone?: string): Promise<any> {
-  const token = getToken('clio');
+  const { userId } = await auth();
+  if (!userId) throw new Error("Unauthorized");
+  const token = getToken(userId, 'clio');
   if (!token?.access_token) {
     throw new Error("Cannot connect to Clio: No active connection found.");
   }
@@ -86,7 +91,9 @@ export async function createClioContact(name: string, email?: string, phone?: st
  * Creates a new Matter in Clio Manage.
  */
 export async function createClioMatter(description: string, clientId: number | string): Promise<any> {
-  const token = getToken('clio');
+  const { userId } = await auth();
+  if (!userId) throw new Error("Unauthorized");
+  const token = getToken(userId, 'clio');
   if (!token?.access_token) {
     throw new Error("Cannot connect to Clio: No active connection found.");
   }
@@ -135,20 +142,22 @@ async function getClioCurrentUserId(accessToken: string): Promise<number> {
  * Creates a new Task in Clio Manage.
  */
 export async function createClioTask(matterId: number | string, name: string, dueAt?: string): Promise<any> {
-  const token = getToken('clio');
+  const { userId } = await auth();
+  if (!userId) throw new Error("Unauthorized");
+  const token = getToken(userId, 'clio');
   if (!token?.access_token) {
     throw new Error("Cannot connect to Clio: No active connection found.");
   }
 
   // Fetch active user ID to assign the task
-  const userId = await getClioCurrentUserId(token.access_token);
+  const clioUserId = await getClioCurrentUserId(token.access_token);
 
   const clioTasksUrl = 'https://app.clio.com/api/v4/tasks.json';
   const payload: any = {
     data: {
       name,
       assignee: {
-        id: userId,
+        id: clioUserId,
         type: 'User'
       },
       matter: {
@@ -180,7 +189,9 @@ export async function createClioTask(matterId: number | string, name: string, du
  * Toggles status of a Task in Clio Manage.
  */
 export async function completeClioTask(taskId: number | string, completed: boolean): Promise<any> {
-  const token = getToken('clio');
+  const { userId } = await auth();
+  if (!userId) throw new Error("Unauthorized");
+  const token = getToken(userId, 'clio');
   if (!token?.access_token) {
     throw new Error("Cannot connect to Clio: No active connection found.");
   }
@@ -225,7 +236,9 @@ async function getClioDefaultCalendarId(accessToken: string): Promise<number> {
 }
 
 export async function createClioCalendarEvent(matterId: number | string, summary: string, startAt: string): Promise<any> {
-  const token = getToken('clio');
+  const { userId } = await auth();
+  if (!userId) throw new Error("Unauthorized");
+  const token = getToken(userId, 'clio');
   if (!token?.access_token) {
     throw new Error("Cannot connect to Clio: No active connection found.");
   }
@@ -270,7 +283,9 @@ export async function createClioCalendarEvent(matterId: number | string, summary
 }
 
 export async function updateClioMatterStatus(matterId: number | string, status: string): Promise<any> {
-  const token = getToken('clio');
+  const { userId } = await auth();
+  if (!userId) throw new Error("Unauthorized");
+  const token = getToken(userId, 'clio');
   if (!token?.access_token) {
     throw new Error("Cannot connect to Clio: No active connection found.");
   }

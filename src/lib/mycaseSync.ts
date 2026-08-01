@@ -67,8 +67,8 @@ async function mycaseFetch(url: string, token: string, retries = 3): Promise<any
 /**
  * Main Sync Function
  */
-export async function syncMycaseData(onProgress: (msg: string, count?: number) => void, jobId?: string) {
-  const tokenData = getToken('mycase');
+export async function syncMycaseData(userId: string, onProgress: (msg: string, count?: number) => void, jobId?: string) {
+  const tokenData = getToken(userId, 'mycase');
   if (!tokenData || !tokenData.access_token) {
     throw new Error('MyCase is not connected or token is missing.');
   }

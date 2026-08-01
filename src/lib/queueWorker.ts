@@ -137,7 +137,7 @@ export function startQueueWorker() {
           await completeJob(job.id);
 
         } else if (job.type === 'mycase-sync') {
-          await syncMycaseData((msg, count) => {
+          await syncMycaseData(userId, (msg, count) => {
             updateJobProgress(job.id, {
               percent: count ? Math.min(100, Math.round((count / 15) * 100)) : 10,
               completed: count ?? 0,
@@ -148,7 +148,7 @@ export function startQueueWorker() {
           await completeJob(job.id);
 
         } else if (job.type === 'filevine-sync') {
-          await syncFilevineData((msg, count) => {
+          await syncFilevineData(userId, (msg, count) => {
             updateJobProgress(job.id, {
               percent: count ? Math.min(100, Math.round((count / 15) * 100)) : 10,
               completed: count ?? 0,
