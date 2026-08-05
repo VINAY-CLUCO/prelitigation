@@ -1,13 +1,10 @@
 // src/lib/mycaseSync.ts
 // Metadata & physical document sync engine for MyCase
 
-import fs from 'fs';
-import path from 'path';
-import { VAULT_DIR, getToken } from './tokenStore';
-import { isJobPaused, updateJobProgress } from './queueStore';
+import { isJobPaused } from './queueStore';
 import fetch from 'node-fetch';
 
-const MYCASE_VAULT = path.join(VAULT_DIR, 'vault', 'mycase');
+import { prisma } from '@/lib/prisma';
 
 function isTargetDoc(filename: string): boolean {
   if (!filename) return false;
@@ -35,9 +32,6 @@ async function checkPause(jobId?: string) {
   }
 }
 
-/**
- * Generic fetcher that handles MyCase's rate limits (HTTP 429) automatically with exponential backoff.
- */
 async function mycaseFetch(url: string, token: string, retries = 3): Promise<any> {
   for (let i = 0; i < retries; i++) {
     const res = await fetch(url, {
@@ -64,56 +58,81 @@ async function mycaseFetch(url: string, token: string, retries = 3): Promise<any
   throw new Error(`MyCase API Failed after ${retries} retries.`);
 }
 
-/**
- * Main Sync Function
- */
 export async function syncMycaseData(userId: string, onProgress: (msg: string, count?: number) => void, jobId?: string) {
-  const tokenData = getToken(userId, 'mycase');
-  if (!tokenData || !tokenData.access_token) {
+  const integration = await prisma.integration.findFirst({
+    where: { userId, platform: 'mycase' }
+  });
+  
+  if (!integration || !integration.accessToken) {
     throw new Error('MyCase is not connected or token is missing.');
   }
 
-  if (!fs.existsSync(MYCASE_VAULT)) fs.mkdirSync(MYCASE_VAULT, { recursive: true });
+  const token = integration.accessToken;
 
   onProgress('Initializing MyCase API sync...', 0);
   await checkPause(jobId);
 
-  // Note: These endpoints are standard representations for MyCase's architecture.
-  // When real keys are applied, minor adjustments to the exact path might be required based on MyCase's spec.
   const mattersUrl = 'https://api.mycase.com/v1/cases';
   
   try {
-    const mattersData = await mycaseFetch(mattersUrl, tokenData.access_token);
+    const mattersData = await mycaseFetch(mattersUrl, token);
     const matters = mattersData.cases || [];
 
     onProgress(`Found ${matters.length} MyCase matters. Syncing metadata...`, 5);
     
-    // Save matters index
-    fs.writeFileSync(path.join(MYCASE_VAULT, 'matters.json'), JSON.stringify(matters, null, 2));
-
     let docsIngested = 0;
 
     for (let i = 0; i < matters.length; i++) {
       await checkPause(jobId);
       const matter = matters[i];
-      const matterDir = path.join(MYCASE_VAULT, matter.id.toString());
-      if (!fs.existsSync(matterDir)) fs.mkdirSync(matterDir, { recursive: true });
+      const matterIdStr = matter.id.toString();
+
+      let dbMatter = await prisma.matter.findFirst({
+        where: { userId, source: 'mycase', sourceId: matterIdStr }
+      });
+      
+      if (!dbMatter) {
+        dbMatter = await prisma.matter.create({
+          data: {
+            userId,
+            name: matter.name || `Matter ${matter.id}`,
+            description: 'Synced from MyCase',
+            status: 'Open',
+            source: 'mycase',
+            sourceId: matterIdStr
+          }
+        });
+      }
 
       onProgress(`Syncing documents for MyCase matter: ${matter.name || matter.id}...`, 5 + i);
 
-      // Fetch documents for this case
       const docsUrl = `https://api.mycase.com/v1/documents?case_id=${matter.id}`;
       try {
-        const docsData = await mycaseFetch(docsUrl, tokenData.access_token);
+        const docsData = await mycaseFetch(docsUrl, token);
         const documents = docsData.documents || [];
         
-        fs.writeFileSync(path.join(matterDir, 'documents.json'), JSON.stringify(documents, null, 2));
-
         for (const doc of documents) {
           if (!isTargetDoc(doc.name)) continue;
 
-          // Placeholder for actual physical file download
-          // e.g., GET https://api.mycase.com/v1/documents/{doc.id}/download
+          let dbDoc = await prisma.document.findFirst({
+             where: { userId, source: 'mycase', sourceId: doc.id.toString() }
+          });
+          
+          if (!dbDoc) {
+             dbDoc = await prisma.document.create({
+               data: {
+                 userId,
+                 matterId: dbMatter.id,
+                 name: doc.name || 'document.pdf',
+                 size: doc.size ? parseInt(doc.size, 10) : null,
+                 type: 'Document 📄',
+                 source: 'mycase',
+                 sourceId: doc.id.toString(),
+                 downloaded: false
+               }
+             });
+          }
+
           docsIngested++;
         }
       } catch (e) {

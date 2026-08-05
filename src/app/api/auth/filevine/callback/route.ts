@@ -12,11 +12,11 @@ export async function GET(request: NextRequest) {
   const error = request.nextUrl.searchParams.get('error');
 
   if (error) {
-    return NextResponse.redirect(`http://127.0.0.1:3000/settings?error=${encodeURIComponent(error)}`);
+    return NextResponse.redirect(`${request.nextUrl.origin}/settings?error=${encodeURIComponent(error)}`);
   }
 
   if (!code) {
-    return NextResponse.redirect(`http://127.0.0.1:3000/settings?error=Missing authorization code from Filevine`);
+    return NextResponse.redirect(`${request.nextUrl.origin}/settings?error=Missing authorization code from Filevine`);
   }
 
   try {
@@ -31,12 +31,12 @@ export async function GET(request: NextRequest) {
       email: email,
     });
 
-    return NextResponse.redirect('http://127.0.0.1:3000/settings?success=Filevine connected successfully');
+    return NextResponse.redirect(`${request.nextUrl.origin}/settings?connected=filevine&email=${encodeURIComponent(email)}`);
   } catch (err: unknown) {
     console.error('Filevine OAuth error:', err);
     const message = err instanceof Error ? err.message : String(err);
     return NextResponse.redirect(
-      `http://127.0.0.1:3000/settings?error=${encodeURIComponent(message)}`
+      `${request.nextUrl.origin}/settings?error=${encodeURIComponent(message)}`
     );
   }
 }

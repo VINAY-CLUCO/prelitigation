@@ -4,9 +4,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { exchangeGoogleCode, getGoogleUserEmail } from '@/lib/googleOAuth';
 import { auth } from '@clerk/nextjs/server';
-import { PrismaClient } from '@prisma/client';
 
-const prisma = new PrismaClient();
+
+import { prisma } from '@/lib/prisma';
+
 
 export async function GET(request: NextRequest) {
   const { userId } = await auth();
@@ -19,17 +20,17 @@ export async function GET(request: NextRequest) {
 
   // User denied the permission request
   if (error) {
-    return NextResponse.redirect(`https://cluco.vinayk.in/settings/integrations?error=${encodeURIComponent('Permission denied: ' + error)}`);
+    return NextResponse.redirect(`${request.nextUrl.origin}/settings?error=${encodeURIComponent('Permission denied: ' + error)}`);
   }
 
   if (!code || !state) {
-    return NextResponse.redirect(`https://cluco.vinayk.in/settings/integrations?error=${encodeURIComponent('Missing code or state from Google')}`);
+    return NextResponse.redirect(`${request.nextUrl.origin}/settings?error=${encodeURIComponent('Missing code or state from Google')}`);
   }
 
   try {
     const { userId } = await auth();
     if (!userId) {
-      return NextResponse.redirect(`https://cluco.vinayk.in/settings/integrations?error=${encodeURIComponent('Unauthorized')}`);
+      return NextResponse.redirect(`${request.nextUrl.origin}/settings?error=${encodeURIComponent('Unauthorized')}`);
     }
 
     // Ensure User exists in Prisma
@@ -71,10 +72,10 @@ export async function GET(request: NextRequest) {
       }
     });
 
-    return NextResponse.redirect(`https://cluco.vinayk.in/settings/integrations?connected=${state}&email=${encodeURIComponent(email)}`);
+    return NextResponse.redirect(`${request.nextUrl.origin}/settings?connected=${state}&email=${encodeURIComponent(email)}`);
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);
     console.error(`[Google OAuth Callback] Error:`, message);
-    return NextResponse.redirect(`https://cluco.vinayk.in/settings/integrations?error=${encodeURIComponent(message)}`);
+    return NextResponse.redirect(`${request.nextUrl.origin}/settings?error=${encodeURIComponent(message)}`);
   }
 }

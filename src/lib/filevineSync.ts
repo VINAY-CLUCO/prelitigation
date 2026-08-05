@@ -1,13 +1,10 @@
 // src/lib/filevineSync.ts
 // Metadata & physical document sync engine for Filevine (includes rigorous rate limiting)
 
-import fs from 'fs';
-import path from 'path';
-import { VAULT_DIR, getToken } from './tokenStore';
-import { isJobPaused, updateJobProgress } from './queueStore';
+import { isJobPaused } from './queueStore';
 import fetch from 'node-fetch';
 
-const FILEVINE_VAULT = path.join(VAULT_DIR, 'vault', 'filevine');
+import { prisma } from '@/lib/prisma';
 
 function isTargetDoc(filename: string): boolean {
   if (!filename) return false;
@@ -35,9 +32,6 @@ async function checkPause(jobId?: string) {
   }
 }
 
-/**
- * Generic fetcher that handles Filevine's rate limits (HTTP 429) automatically with exponential backoff.
- */
 async function filevineFetch(url: string, token: string, retries = 5): Promise<any> {
   for (let i = 0; i < retries; i++) {
     const res = await fetch(url, {
@@ -48,9 +42,7 @@ async function filevineFetch(url: string, token: string, retries = 5): Promise<a
     });
 
     if (res.status === 429) {
-      // Filevine may use X-Rate-Limit-Reset or Retry-After
       const retryAfter = res.headers.get('Retry-After');
-      // If no header, fallback to exponential backoff (2^i seconds)
       const waitTime = retryAfter ? parseInt(retryAfter) * 1000 : (2 ** i) * 1000;
       console.warn(`[Filevine Sync] Rate limited (429). Waiting ${waitTime}ms before retry...`);
       await delay(waitTime);
@@ -66,52 +58,84 @@ async function filevineFetch(url: string, token: string, retries = 5): Promise<a
   throw new Error(`Filevine API Failed after ${retries} retries due to rate limiting.`);
 }
 
-/**
- * Main Sync Function
- */
 export async function syncFilevineData(userId: string, onProgress: (msg: string, count?: number) => void, jobId?: string) {
-  const tokenData = getToken(userId, 'filevine');
-  if (!tokenData || !tokenData.access_token) {
+  // We expect accessToken to be passed or fetched inside queueWorker, but currently filevineSync fetches it using getToken.
+  // Wait, getToken was using tokenStore.ts which was local JSON. 
+  // We need to fetch the token from Prisma.
+  
+  const integration = await prisma.integration.findFirst({
+    where: { userId, platform: 'filevine' }
+  });
+  
+  if (!integration || !integration.accessToken) {
     throw new Error('Filevine is not connected or token is missing.');
   }
-
-  if (!fs.existsSync(FILEVINE_VAULT)) fs.mkdirSync(FILEVINE_VAULT, { recursive: true });
+  
+  const token = integration.accessToken;
 
   onProgress('Initializing Filevine API sync...', 0);
   await checkPause(jobId);
 
-  // Standard Filevine API endpoints
   const projectsUrl = 'https://api.filevine.io/core/projects';
   
   try {
-    const projectsData = await filevineFetch(projectsUrl, tokenData.access_token);
+    const projectsData = await filevineFetch(projectsUrl, token);
     const projects = projectsData.items || [];
 
     onProgress(`Found ${projects.length} Filevine projects. Syncing metadata...`, 5);
     
-    // Save projects index
-    fs.writeFileSync(path.join(FILEVINE_VAULT, 'projects.json'), JSON.stringify(projects, null, 2));
-
     let docsIngested = 0;
 
     for (let i = 0; i < projects.length; i++) {
       await checkPause(jobId);
       const project = projects[i];
-      const projectDir = path.join(FILEVINE_VAULT, project.projectId.toString());
-      if (!fs.existsSync(projectDir)) fs.mkdirSync(projectDir, { recursive: true });
+      const projectIdStr = project.projectId.toString();
+      
+      let dbMatter = await prisma.matter.findFirst({
+        where: { userId, source: 'filevine', sourceId: projectIdStr }
+      });
+      
+      if (!dbMatter) {
+        dbMatter = await prisma.matter.create({
+          data: {
+            userId,
+            name: project.projectName || `Project ${project.projectId}`,
+            description: 'Synced from Filevine',
+            status: 'Open',
+            source: 'filevine',
+            sourceId: projectIdStr
+          }
+        });
+      }
 
       onProgress(`Syncing documents for Filevine project: ${project.projectName || project.projectId}...`, 5 + i);
 
-      // Fetch documents for this project
       const docsUrl = `https://api.filevine.io/core/projects/${project.projectId}/documents`;
       try {
-        const docsData = await filevineFetch(docsUrl, tokenData.access_token);
+        const docsData = await filevineFetch(docsUrl, token);
         const documents = docsData.items || [];
-        
-        fs.writeFileSync(path.join(projectDir, 'documents.json'), JSON.stringify(documents, null, 2));
 
         for (const doc of documents) {
           if (!isTargetDoc(doc.filename)) continue;
+
+          let dbDoc = await prisma.document.findFirst({
+             where: { userId, source: 'filevine', sourceId: doc.documentId.toString() }
+          });
+          
+          if (!dbDoc) {
+             dbDoc = await prisma.document.create({
+               data: {
+                 userId,
+                 matterId: dbMatter.id,
+                 name: doc.filename || 'document.pdf',
+                 size: doc.size ? parseInt(doc.size, 10) : null,
+                 type: 'Document 📄',
+                 source: 'filevine',
+                 sourceId: doc.documentId.toString(),
+                 downloaded: false
+               }
+             });
+          }
 
           // Placeholder for actual physical file download using Filevine's download URL mechanism
           docsIngested++;

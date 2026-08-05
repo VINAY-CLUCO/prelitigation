@@ -1,38 +1,44 @@
 import { auth } from '@clerk/nextjs/server';
 import { NextResponse } from 'next/server';
-import fs from 'fs';
-import path from 'path';
-import { VAULT_DIR, getToken } from '@/lib/tokenStore';
+import { getToken } from '@/lib/tokenStore';
 import { createClioContact, createClioMatter, updateClioMatterStatus } from '@/lib/clioPush';
+
 
 export const dynamic = 'force-dynamic';
 
-function getClioVault(userId: string) {
-  return path.join(VAULT_DIR, 'vault', userId, 'clio');
-}
+import { prisma } from '@/lib/prisma';
 
-// Ensure vault directory exists
-function ensureVaultDir(userId: string) {
-  const vaultDir = getClioVault(userId);
-  if (!fs.existsSync(vaultDir)) {
-    fs.mkdirSync(vaultDir, { recursive: true });
-  }
-}
 
 export async function GET() {
   const { userId } = await auth();
   if (!userId) return new Response('Unauthorized', { status: 401 });
 
-  ensureVaultDir(userId);
-  
   const clioToken = getToken(userId, 'clio');
-  const clioMatters = getLocalMatters(getClioVault(userId), 'clio');
-
-  // Sort by open date descending
-  clioMatters.sort((a, b) => new Date(b.open_date).getTime() - new Date(a.open_date).getTime());
+  
+  // Fetch from Postgres via Prisma
+  const matters = await prisma.matter.findMany({
+    where: { userId },
+    include: {
+      documents: true,
+      tasks: true,
+      events: true,
+    },
+    orderBy: { createdAt: 'desc' }
+  });
 
   return NextResponse.json({
-    matters: clioMatters,
+    matters: matters.map(m => ({
+      id: m.id,
+      display_number: m.name, // Mapping db name to display_number for frontend compatibility
+      description: m.description,
+      status: m.status,
+      client: { name: m.clientId || 'Unknown' },
+      open_date: m.createdAt.toISOString().split('T')[0],
+      provider: m.source || 'clio',
+      documents: m.documents,
+      tasks: m.tasks,
+      calendar: m.events
+    })),
     connections: {
       clio: !!clioToken?.access_token,
     }
@@ -52,9 +58,8 @@ export async function POST(request: Request) {
     }
 
     const token = getToken(userId, 'clio');
-    let finalMatterId = String(Date.now());
     let displayNum = `CLO-${Math.floor(100000 + Math.random() * 900000)}`;
-    let clientData = { id: Date.now(), name: clientName };
+    let sourceId = '';
 
     // If connected live, call Clio API
     if (token?.access_token) {
@@ -62,42 +67,36 @@ export async function POST(request: Request) {
         const contact = await createClioContact(clientName, clientEmail, clientPhone);
         const matter = await createClioMatter(matterDescription, contact.id);
         
-        finalMatterId = String(matter.id);
+        sourceId = String(matter.id);
         displayNum = matter.display_number || displayNum;
-        clientData = { id: contact.id, name: contact.name };
       } catch (err: any) {
         console.error('[Clio Live Create Error]', err);
         return NextResponse.json({ error: `Clio API Error: ${err.message}` }, { status: 502 });
       }
     }
 
-    // Write locally
-    ensureVaultDir(userId);
-    const newMatterDir = path.join(getClioVault(userId), finalMatterId);
-    
-    if (!fs.existsSync(newMatterDir)) {
-      fs.mkdirSync(newMatterDir, { recursive: true });
-    }
-
-    const matterMetadata = {
-      id: finalMatterId,
-      display_number: displayNum,
-      description: matterDescription,
-      status: 'Open',
-      client: clientData,
-      open_date: new Date().toISOString().split('T')[0],
-      close_date: null
-    };
-
-    fs.writeFileSync(path.join(newMatterDir, 'matter.json'), JSON.stringify(matterMetadata, null, 2));
-    fs.writeFileSync(path.join(newMatterDir, 'documents.json'), JSON.stringify([], null, 2));
-    fs.writeFileSync(path.join(newMatterDir, 'tasks.json'), JSON.stringify([], null, 2));
-    fs.writeFileSync(path.join(newMatterDir, 'calendar.json'), JSON.stringify([], null, 2));
+    // Write to Postgres
+    const newMatter = await prisma.matter.create({
+      data: {
+        userId,
+        name: displayNum,
+        description: matterDescription,
+        status: 'Open',
+        clientId: clientName,
+        source: 'clio',
+        sourceId: sourceId || null
+      }
+    });
 
     return NextResponse.json({
       success: true,
       matter: {
-        ...matterMetadata,
+        id: newMatter.id,
+        display_number: newMatter.name,
+        description: newMatter.description,
+        status: newMatter.status,
+        client: { name: clientName },
+        open_date: newMatter.createdAt.toISOString().split('T')[0],
         provider: 'clio',
         documents: [],
         tasks: [],
@@ -122,81 +121,35 @@ export async function PATCH(request: Request) {
       return NextResponse.json({ error: 'Matter ID and Status are required.' }, { status: 400 });
     }
 
-    ensureVaultDir(userId);
-    const matterDir = path.join(getClioVault(userId), matterId);
-    const matterFile = path.join(matterDir, 'matter.json');
-
-    if (!fs.existsSync(matterFile)) {
+    const matter = await prisma.matter.findUnique({ where: { id: matterId } });
+    if (!matter || matter.userId !== userId) {
       return NextResponse.json({ error: 'Matter not found.' }, { status: 404 });
     }
 
-    const matterMetadata = JSON.parse(fs.readFileSync(matterFile, 'utf-8'));
     const normalizedStatus = status.charAt(0).toUpperCase() + status.slice(1).toLowerCase();
-    
-    matterMetadata.status = normalizedStatus;
-    if (normalizedStatus === 'Closed') {
-      matterMetadata.close_date = new Date().toISOString().split('T')[0];
-    } else {
-      matterMetadata.close_date = null;
-    }
 
     // Update via Clio API if live
     const token = getToken(userId, 'clio');
-    if (token?.access_token) {
+    if (token?.access_token && matter.sourceId) {
       try {
-        await updateClioMatterStatus(matterId, normalizedStatus);
+        await updateClioMatterStatus(matter.sourceId, normalizedStatus);
       } catch (err: any) {
         console.error('[Clio Live Update Status Error]', err);
         return NextResponse.json({ error: `Clio API Error: ${err.message}` }, { status: 502 });
       }
     }
 
-    fs.writeFileSync(matterFile, JSON.stringify(matterMetadata, null, 2));
+    const updatedMatter = await prisma.matter.update({
+      where: { id: matterId },
+      data: { status: normalizedStatus }
+    });
 
     return NextResponse.json({
       success: true,
-      matter: matterMetadata
+      matter: updatedMatter
     });
   } catch (err: any) {
     console.error('[Update Matter API Error]', err);
     return NextResponse.json({ error: 'Failed to update matter.' }, { status: 500 });
   }
-}
-
-// Scans the Clio vault directory and returns all parsed matters
-function getLocalMatters(vaultPath: string, provider: 'clio') {
-  const matters = [];
-  if (fs.existsSync(vaultPath)) {
-    const folders = fs.readdirSync(vaultPath);
-    for (const folder of folders) {
-      const folderPath = path.join(vaultPath, folder);
-      const matterFile = path.join(folderPath, 'matter.json');
-      const docsFile = path.join(folderPath, 'documents.json');
-      const tasksFile = path.join(folderPath, 'tasks.json');
-      const calendarFile = path.join(folderPath, 'calendar.json');
-
-      if (fs.existsSync(matterFile)) {
-        try {
-          const matter = JSON.parse(fs.readFileSync(matterFile, 'utf-8'));
-          const docs = fs.existsSync(docsFile) ? JSON.parse(fs.readFileSync(docsFile, 'utf-8')) : [];
-          const tasks = fs.existsSync(tasksFile) ? JSON.parse(fs.readFileSync(tasksFile, 'utf-8')) : [];
-          const calendar = fs.existsSync(calendarFile) ? JSON.parse(fs.readFileSync(calendarFile, 'utf-8')) : [];
-          
-          matters.push({ 
-            ...matter,
-            provider,
-            documents: docs,
-            tasks: tasks,
-            calendar: calendar
-          });
-        } catch (e) {
-          console.error(`Failed to parse local matter file under ${provider}:`, e);
-        }
-      }
-    }
-  }
-
-
-
-  return matters;
 }

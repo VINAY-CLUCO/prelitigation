@@ -587,7 +587,12 @@ export default function CollectionLibraryPage() {
                               
                               <div style={{ display: 'flex', gap: 10, marginTop: 10 }}>
                                 <button style={{ flex: 1, padding: '8px', background: 'var(--bg-hover)', color: 'var(--text-primary)', border: '1px solid var(--border-medium)', borderRadius: 'var(--radius-sm)', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>View Raw JSON</button>
-                                <button style={{ flex: 1, padding: '8px', background: 'var(--text-primary)', color: '#FFF', border: 'none', borderRadius: 'var(--radius-sm)', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>Download Blob</button>
+                                <button 
+                                  onClick={() => window.open(`/api/documents/download?id=${doc.id}`, '_blank')}
+                                  style={{ flex: 1, padding: '8px', background: 'var(--text-primary)', color: '#FFF', border: 'none', borderRadius: 'var(--radius-sm)', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}
+                                >
+                                  Download File
+                                </button>
                               </div>
                             </div>
                           </div>

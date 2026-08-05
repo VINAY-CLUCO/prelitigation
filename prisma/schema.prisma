@@ -6,8 +6,9 @@ generator client {
 }
 
 datasource db {
-  provider = "sqlite"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
 }
 
 model User {
@@ -19,6 +20,10 @@ model User {
   updatedAt DateTime @updatedAt
 
   integrations Integration[]
+  matters      Matter[]
+  documents    Document[]
+  tasks        Task[]
+  events       Event[]
 }
 
 model Integration {
@@ -35,3 +40,80 @@ model Integration {
 
   @@unique([userId, platform])
 }
+
+model Matter {
+  id          String   @id @default(uuid())
+  userId      String
+  name        String
+  description String?
+  status      String?
+  clientId    String?
+  source      String?  // e.g. "clio", "mycase", "manual"
+  sourceId    String?  // original ID in external system
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  user        User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  documents   Document[]
+  tasks       Task[]
+  events      Event[]
+}
+
+model Document {
+  id           String   @id @default(uuid())
+  userId       String
+  matterId     String?
+  name         String
+  size         Int?
+  type         String?
+  aiTag        String?
+  storagePath  String?  // Supabase Storage path
+  source       String?  // e.g. "clio", "google_drive", "gmail"
+  sourceId     String?
+  downloaded   Boolean  @default(false)
+  downloadedAt DateTime?
+  emailSubject String?
+  emailSender  String?
+
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  matter       Matter?  @relation(fields: [matterId], references: [id], onDelete: SetNull)
+}
+
+model Task {
+  id          String   @id @default(uuid())
+  userId      String
+  matterId    String?
+  name        String
+  status      String?
+  dueAt       DateTime?
+  source      String?
+  sourceId    String?
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  matter      Matter?  @relation(fields: [matterId], references: [id], onDelete: SetNull)
+}
+
+model Event {
+  id          String   @id @default(uuid())
+  userId      String
+  matterId    String?
+  summary     String
+  startAt     DateTime
+  endAt       DateTime?
+  source      String?
+  sourceId    String?
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  matter      Matter?  @relation(fields: [matterId], references: [id], onDelete: SetNull)
+}
+

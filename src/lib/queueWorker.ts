@@ -2,11 +2,8 @@
 // Background task worker running as a singleton interval loop inside Next.js Node process
 // Implements real-time background sync pipelines for Clio Manage, Google Drive, Gmail, Dropbox, OneDrive, and Outlook
 
-import fs from 'fs';
-import path from 'path';
 import { google } from 'googleapis';
 import { PrismaClient } from '@prisma/client';
-import { getUserProviderVaultDir } from './vault';
 import { 
   getNextJob, 
   updateJobProgress, 
@@ -17,8 +14,8 @@ import {
 import { syncClioData, downloadPhysicalFile } from './clioSync';
 import { syncMycaseData } from './mycaseSync';
 import { syncFilevineData } from './filevineSync';
-
-const prisma = new PrismaClient();
+import { uploadFile } from './storage';
+import { prisma } from './prisma';
 
 
 let workerInterval: NodeJS.Timeout | null = null;
@@ -120,10 +117,34 @@ export function startQueueWorker() {
         }
 
         const providerName = job.type.split('-')[0];
-        const integration = await prisma.integration.findUnique({
+        let integration = await prisma.integration.findUnique({
           where: { userId_platform: { userId, platform: providerName } }
         });
-        const accessToken = integration?.accessToken;
+        
+        let accessToken = integration?.accessToken;
+
+        // Auto-refresh Google tokens if expired (add 5-minute buffer)
+        if (integration && (providerName === 'gdrive' || providerName === 'gmail') && integration.expiresAt && integration.expiresAt.getTime() < Date.now() + 5 * 60 * 1000) {
+            if (integration.refreshToken) {
+                try {
+                    const { refreshGoogleToken } = await import('./googleOAuth');
+                    const creds = await refreshGoogleToken(integration.refreshToken);
+                    if (creds.access_token) {
+                        accessToken = creds.access_token;
+                        integration = await prisma.integration.update({
+                            where: { id: integration.id },
+                            data: {
+                                accessToken,
+                                expiresAt: creds.expiry_date ? new Date(creds.expiry_date) : null
+                            }
+                        });
+                        console.log(`[Queue Worker] Refreshed expired Google token for user ${userId} (${providerName})`);
+                    }
+                } catch (err) {
+                    console.error(`[Queue Worker] Failed to refresh Google token for user ${userId}:`, err);
+                }
+            }
+        }
 
         if (job.type === 'clio-matter-sync') {
           await syncClioData(userId, accessToken || '', (msg, count) => {
@@ -161,41 +182,49 @@ export function startQueueWorker() {
         } else if (job.type === 'clio-document-ingest') {
           const { documentId, name, matterId, token: docToken, size, content_type } = job.data;
           await updateJobProgress(job.id, { percent: 10, completed: 0, total: 1, msg: `Downloading ${name} from Clio...` });
-          
-          const CLIO_VAULT = getUserProviderVaultDir(userId, 'clio');
-          const matterDir = path.join(CLIO_VAULT, matterId.toString());
-          if (!fs.existsSync(matterDir)) fs.mkdirSync(matterDir, { recursive: true });
 
           const cleanFileName = (name || 'document').replace(/[^a-zA-Z0-9.\-_]/g, '_');
-          const physicalFilePath = path.join(matterDir, `${documentId}_${cleanFileName}`);
+          const storagePath = `${userId}/clio/${documentId}_${cleanFileName}`;
           
-          await downloadPhysicalFile(documentId.toString(), docToken || '', physicalFilePath, name || 'document.pdf');
+          await downloadPhysicalFile(documentId.toString(), docToken || '', storagePath, name || 'document.pdf');
           await updateJobProgress(job.id, { percent: 60, completed: 0, total: 1, msg: `Parsing metadata & indexing ${name}...` });
           
           const aiTag = triageDocument(name || '');
-          const docsFile = path.join(matterDir, 'documents.json');
-          let documents = [];
-          if (fs.existsSync(docsFile)) {
-            documents = JSON.parse(fs.readFileSync(docsFile, 'utf-8'));
-          }
 
-          const newDoc = {
-            id: documentId,
-            name,
-            content_type,
-            size,
-            ai_tag: aiTag,
-            downloaded: true,
-            downloaded_at: new Date().toISOString()
-          };
+          let dbMatter = await prisma.matter.findFirst({
+            where: { userId, source: 'clio', sourceId: matterId.toString() }
+          });
 
-          const existingIndex = documents.findIndex((d: any) => d.id === newDoc.id);
-          if (existingIndex >= 0) {
-            documents[existingIndex] = { ...documents[existingIndex], ...newDoc };
+          let dbDoc = await prisma.document.findFirst({
+            where: { userId, source: 'clio', sourceId: documentId.toString() }
+          });
+
+          if (!dbDoc) {
+            await prisma.document.create({
+              data: {
+                userId,
+                matterId: dbMatter?.id,
+                name: name || 'document.pdf',
+                size: size ? parseInt(size, 10) : null,
+                type: content_type || 'Document 📄',
+                source: 'clio',
+                sourceId: documentId.toString(),
+                storagePath,
+                downloaded: true,
+                downloadedAt: new Date()
+              }
+            });
           } else {
-            documents.push(newDoc);
+            await prisma.document.update({
+              where: { id: dbDoc.id },
+              data: {
+                storagePath,
+                downloaded: true,
+                downloadedAt: new Date(),
+                size: size ? parseInt(size, 10) : dbDoc.size
+              }
+            });
           }
-          fs.writeFileSync(docsFile, JSON.stringify(documents, null, 2));
           await completeJob(job.id);
 
         } else if (job.type === 'gdrive-sync') {
@@ -248,14 +277,6 @@ export function stopQueueWorker() {
 // ─── Real Ingestion Helper Processes ─────────────────────────────────
 
 async function syncGoogleDrive(jobId: string, userId: string, accessToken: string) {
-  const GDRIVE_VAULT = getUserProviderVaultDir(userId, 'gdrive');
-
-  const docsFile = path.join(GDRIVE_VAULT, 'documents.json');
-  let documents: any[] = [];
-  if (fs.existsSync(docsFile)) {
-    try { documents = JSON.parse(fs.readFileSync(docsFile, 'utf-8')); } catch {}
-  }
-
   if (!accessToken) {
     await updateJobProgress(jobId, { percent: 100, completed: 0, total: 0, msg: 'Missing access token for Google Drive.' });
     return;
@@ -313,74 +334,65 @@ async function syncGoogleDrive(jobId: string, userId: string, accessToken: strin
     });
 
     const safeName = fileName.replace(/[^a-zA-Z0-9.\-_]/g, '_');
-    const shortFileId = fileId.length > 24 ? fileId.slice(0, 24) : fileId;
-    const localFilePath = path.join(GDRIVE_VAULT, `${shortFileId}_${safeName}`);
-    const directFilePath = path.join(GDRIVE_VAULT, safeName);
+    const storagePath = `${userId}/gdrive/${fileId}_${safeName}`;
     
-    // Fast Skip: If file exists on local disk AND in index, skip download completely
-    const fileExists = fs.existsSync(directFilePath) || fs.existsSync(localFilePath);
-    const isIndexed = documents.some(d => d.id === fileId || d.name === fileName || d.name === safeName);
-    if (fileExists && isIndexed) {
-      console.log(`[Google Drive Sync] Skipping ${fileName} — already downloaded locally on disk.`);
+    let dbDoc = await prisma.document.findFirst({
+      where: { userId, source: 'gdrive', sourceId: fileId }
+    });
+
+    if (dbDoc?.downloaded) {
+      console.log(`[Google Drive Sync] Skipping ${fileName} — already downloaded.`);
       continue;
     }
 
     try {
+      let buffer: Buffer;
       if (isGoogleDoc) {
-        const fileStream = fs.createWriteStream(localFilePath);
-        const exportRes = await executeGoogleWithRetry(() => drive.files.export({ fileId: fileId, mimeType: 'application/pdf' }, { responseType: 'stream' }), jobId);
-        await new Promise((resolve, reject) => {
-          exportRes.data
-            .on('data', (chunk) => fileStream.write(chunk))
-            .on('end', () => { fileStream.end(); resolve(true); })
-            .on('error', (err) => { fileStream.end(); reject(err); });
+        const exportRes = await executeGoogleWithRetry(() => drive.files.export({ fileId: fileId, mimeType: 'application/pdf' }, { responseType: 'arraybuffer' }), jobId);
+        buffer = Buffer.from(exportRes.data as ArrayBuffer);
+      } else {
+        const fileRes = await executeGoogleWithRetry(() => drive.files.get({ fileId: fileId, alt: 'media' }, { responseType: 'arraybuffer' }), jobId);
+        buffer = Buffer.from(fileRes.data as ArrayBuffer);
+      }
+
+      await uploadFile(storagePath, buffer);
+
+      if (!dbDoc) {
+        await prisma.document.create({
+          data: {
+            userId,
+            name: fileName,
+            size: buffer.length,
+            type: 'Document',
+            source: 'gdrive',
+            sourceId: fileId,
+            storagePath,
+            downloaded: true,
+            downloadedAt: new Date()
+          }
         });
       } else {
-        const fileStream = fs.createWriteStream(localFilePath);
-        const fileRes = await executeGoogleWithRetry(() => drive.files.get({ fileId: fileId, alt: 'media' }, { responseType: 'stream' }), jobId);
-        await new Promise((resolve, reject) => {
-          fileRes.data
-            .on('data', (chunk) => fileStream.write(chunk))
-            .on('end', () => { fileStream.end(); resolve(true); })
-            .on('error', (err) => { fileStream.end(); reject(err); });
+        await prisma.document.update({
+          where: { id: dbDoc.id },
+          data: {
+            size: buffer.length,
+            storagePath,
+            downloaded: true,
+            downloadedAt: new Date()
+          }
         });
       }
-
-      if (fs.existsSync(localFilePath)) {
-        fs.copyFileSync(localFilePath, directFilePath);
-      }
-
-      const stat = fs.existsSync(localFilePath) ? fs.statSync(localFilePath) : null;
-      const newDoc = {
-        id: fileId,
-        name: fileName,
-        size: stat ? stat.size : (file.size ? parseInt(file.size) : 10240),
-        lastModified: file.modifiedTime,
-        ai_tag: triageDocument(fileName),
-        downloaded: true,
-        downloaded_at: new Date().toISOString()
-      };
-
-      const idx = documents.findIndex((d) => d.id === fileId);
-      if (idx >= 0) documents[idx] = newDoc;
-      else documents.push(newDoc);
     } catch (err) {
       console.error(`[Google Drive Sync] Failed to download ${fileName}:`, err);
     }
   }
-
-  fs.writeFileSync(docsFile, JSON.stringify(documents, null, 2));
 }
 
 async function syncGmail(jobId: string, userId: string, accessToken: string) {
-  const GMAIL_VAULT = getUserProviderVaultDir(userId, 'gmail');
-
-  const docsFile = path.join(GMAIL_VAULT, 'documents.json');
-  let documents: any[] = [];
-  if (fs.existsSync(docsFile)) {
-    try { documents = JSON.parse(fs.readFileSync(docsFile, 'utf-8')); } catch {}
+  if (!accessToken) {
+    await updateJobProgress(jobId, { percent: 100, completed: 0, total: 0, msg: 'Missing access token for Gmail.' });
+    return;
   }
-
 
   await updateJobProgress(jobId, { percent: 10, completed: 0, total: 10, msg: 'Reading all Gmail messages & folders...' });
   const auth = new google.auth.OAuth2();
@@ -453,61 +465,23 @@ async function syncGmail(jobId: string, userId: string, accessToken: string) {
     try {
       const msgDetails = await executeGoogleWithRetry(() => gmail.users.messages.get({ userId: 'me', id: msg.id! }), jobId);
       const attachments = extractAttachmentParts(msgDetails.data.payload);
-      const internalDate = msgDetails.data.internalDate;
 
       const headers = msgDetails.data.payload?.headers || [];
       const emailSubject = headers.find((h: any) => h.name.toLowerCase() === 'subject')?.value || 'No Subject';
-      const emailSender = headers.find((h: any) => h.name.toLowerCase() === 'from')?.value || 'Unknown Sender';
-      const snippet = msgDetails.data.snippet || '';
 
-      // 1. Index the Email Itself
-      const emailDocId = `email_${msg.id}`;
-      const emailFilePath = path.join(GMAIL_VAULT, `${emailDocId}.json`);
-      const emailData = {
-        id: emailDocId,
-        subject: emailSubject,
-        sender: emailSender,
-        snippet: snippet,
-        date: new Date(parseInt(internalDate!)).toISOString(),
-        attachments: attachments.map(a => a.filename)
-      };
-      try { fs.writeFileSync(emailFilePath, JSON.stringify(emailData, null, 2)); } catch {}
-
-      const emailIndexDoc = {
-        id: emailDocId,
-        name: `${emailSubject.replace(/[^a-zA-Z0-9.\-_ ]/g, '_').slice(0, 50)}.email`,
-        type: 'Email',
-        size: JSON.stringify(emailData).length,
-        lastModified: emailData.date,
-        snippet: snippet,
-        ai_tag: 'Email Communication',
-        downloaded: true,
-        downloaded_at: new Date().toISOString(),
-        emailSubject,
-        emailSender,
-        source: 'Gmail',
-        attachments: attachments.map(a => a.filename)
-      };
-      
-      const eIdx = documents.findIndex((d) => d.id === emailIndexDoc.id);
-      if (eIdx >= 0) documents[eIdx] = emailIndexDoc;
-      else documents.push(emailIndexDoc);
-
-      // 2. Download and Index Attachments
+      // Download and Index Attachments
       for (const att of attachments) {
         try {
           const rawDocId = att.attachmentId || `${msg.id}_${att.filename}`;
-          const shortDocId = rawDocId.length > 24 ? rawDocId.slice(0, 24) : rawDocId;
           const safeName = att.filename.replace(/[^a-zA-Z0-9.\-_]/g, '_');
-          const localFilePath = path.join(GMAIL_VAULT, `${shortDocId}_${safeName}`);
-          const directFilePath = path.join(GMAIL_VAULT, safeName);
+          const storagePath = `${userId}/gmail/${rawDocId}_${safeName}`;
 
-          // Fast Skip: If file exists on local disk AND in index, skip download completely
-          const fileExists = fs.existsSync(directFilePath) || fs.existsSync(localFilePath);
-          const isIndexed = documents.some(d => d.id === rawDocId || d.id === shortDocId || d.name === att.filename || d.name === safeName);
+          let dbDoc = await prisma.document.findFirst({
+            where: { userId, source: 'gmail', sourceId: rawDocId }
+          });
 
-          if (fileExists && isIndexed) {
-            console.log(`[Gmail Sync] Skipping ${att.filename} — already downloaded locally on disk.`);
+          if (dbDoc?.downloaded) {
+            console.log(`[Gmail Sync] Skipping ${att.filename} — already downloaded.`);
             continue;
           }
 
@@ -522,38 +496,32 @@ async function syncGmail(jobId: string, userId: string, accessToken: string) {
             base64Data = attach.data.data || '';
           }
 
-          if (!base64Data) {
-            console.warn(`[Gmail Sync] No data found for attachment ${att.filename}`);
-            continue;
-          }
+          if (!base64Data) continue;
 
           const buffer = Buffer.from(base64Data, 'base64url');
-          
-          try { fs.writeFileSync(localFilePath, buffer); } catch {}
-          try { fs.writeFileSync(directFilePath, buffer); } catch {}
+          await uploadFile(storagePath, buffer);
 
-          const newDoc = {
-            id: rawDocId,
-            name: att.filename,
-            type: 'Document',
-            source: 'Gmail',
-            size: buffer.length,
-            lastModified: emailData.date,
-            ai_tag: triageDocument(att.filename),
-            downloaded: true,
-            downloaded_at: new Date().toISOString(),
-            emailSubject,
-            emailSender
-          };
+          if (!dbDoc) {
+            await prisma.document.create({
+              data: {
+                userId,
+                name: att.filename,
+                size: buffer.length,
+                type: 'Email Attachment',
+                source: 'gmail',
+                sourceId: rawDocId,
+                storagePath,
+                downloaded: true,
+                downloadedAt: new Date()
+              }
+            });
+          } else {
+            await prisma.document.update({
+              where: { id: dbDoc.id },
+              data: { storagePath, size: buffer.length, downloaded: true, downloadedAt: new Date() }
+            });
+          }
 
-          const idx = documents.findIndex((d) => d.id === newDoc.id);
-          if (idx >= 0) documents[idx] = newDoc;
-          else documents.push(newDoc);
-
-          // Update documents.json immediately so vault index is always live
-          fs.writeFileSync(docsFile, JSON.stringify(documents, null, 2));
-
-          console.log(`[Gmail Sync] Wrote physical raw file to disk: ${directFilePath} (${buffer.length} bytes)`);
         } catch (attErr) {
           console.error(`[Gmail Sync] Failed to download attachment ${att.filename}:`, attErr);
         }
@@ -562,26 +530,13 @@ async function syncGmail(jobId: string, userId: string, accessToken: string) {
       console.error(`[Gmail Sync] Failed to inspect message ${msg.id}:`, msgErr);
     }
   }
-
-  fs.writeFileSync(docsFile, JSON.stringify(documents, null, 2));
 }
 
 async function syncDropbox(jobId: string, userId: string, accessToken: string) {
-  const DROPBOX_VAULT = getUserProviderVaultDir(userId, 'dropbox');
-
-  const docsFile = path.join(DROPBOX_VAULT, 'documents.json');
-  let documents: any[] = [];
-  if (fs.existsSync(docsFile)) {
-    try { documents = JSON.parse(fs.readFileSync(docsFile, 'utf-8')); } catch {}
-  }
-
   if (!accessToken) {
     await updateJobProgress(jobId, { percent: 100, completed: 0, total: 0, msg: 'Missing access token for Dropbox.' });
     return;
   }
-
-  // Real Dropbox logic
-    documents = documents.filter(d => !d.id.startsWith('db_'));
 
   await updateJobProgress(jobId, { percent: 10, completed: 0, total: 10, msg: 'Scanning all Dropbox folders recursively...' });
   const entries: any[] = [];
@@ -634,18 +589,13 @@ async function syncDropbox(jobId: string, userId: string, accessToken: string) {
 
     try {
       const safeName = file.name.replace(/[^a-zA-Z0-9.\-_]/g, '_');
-      const shortId = file.id.replace(/:/g, '');
-      const cleanShortId = shortId.length > 24 ? shortId.slice(0, 24) : shortId;
-      const localFilePath = path.join(DROPBOX_VAULT, `${cleanShortId}_${safeName}`);
-      const directFilePath = path.join(DROPBOX_VAULT, safeName);
+      const storagePath = `${userId}/dropbox/${file.id}_${safeName}`;
 
-      // Fast Skip: If file exists on local disk AND in index, skip download completely
-      const fileExists = fs.existsSync(directFilePath) || fs.existsSync(localFilePath);
-      const isIndexed = documents.some(d => d.id === file.id || d.name === file.name || d.name === safeName);
-      if (fileExists && isIndexed) {
-        console.log(`[Dropbox Sync] Skipping ${file.name} — already downloaded locally on disk.`);
-        continue;
-      }
+      let dbDoc = await prisma.document.findFirst({
+        where: { userId, source: 'dropbox', sourceId: file.id }
+      });
+
+      if (dbDoc?.downloaded) continue;
 
       const downRes = await fetchWithRetry('https://content.dropboxapi.com/2/files/download', {
         method: 'POST',
@@ -657,45 +607,38 @@ async function syncDropbox(jobId: string, userId: string, accessToken: string) {
 
       if (downRes.ok) {
         const buffer = Buffer.from(await downRes.arrayBuffer());
-        fs.writeFileSync(localFilePath, buffer);
+        await uploadFile(storagePath, buffer);
 
-        const newDoc = {
-          id: file.id,
-          name: file.name,
-          size: file.size,
-          lastModified: file.server_modified,
-          ai_tag: triageDocument(file.name),
-          downloaded: true,
-          downloaded_at: new Date().toISOString()
-        };
-
-        const idx = documents.findIndex((d) => d.id === file.id);
-        if (idx >= 0) documents[idx] = newDoc;
-        else documents.push(newDoc);
+        if (!dbDoc) {
+          await prisma.document.create({
+            data: {
+              userId,
+              name: file.name,
+              size: file.size,
+              type: 'Document',
+              source: 'dropbox',
+              sourceId: file.id,
+              storagePath,
+              downloaded: true,
+              downloadedAt: new Date()
+            }
+          });
+        } else {
+          await prisma.document.update({
+            where: { id: dbDoc.id },
+            data: { storagePath, downloaded: true, downloadedAt: new Date() }
+          });
+        }
       }
     } catch {}
   }
-
-  fs.writeFileSync(docsFile, JSON.stringify(documents, null, 2));
 }
 
 async function syncOneDrive(jobId: string, userId: string, accessToken: string) {
-  const ONEDRIVE_VAULT = getUserProviderVaultDir(userId, 'onedrive');
-
-  const docsFile = path.join(ONEDRIVE_VAULT, 'documents.json');
-  let documents: any[] = [];
-  if (fs.existsSync(docsFile)) {
-    try { documents = JSON.parse(fs.readFileSync(docsFile, 'utf-8')); } catch {}
-  }
-
   if (!accessToken) {
     await updateJobProgress(jobId, { percent: 100, completed: 0, total: 0, msg: 'Missing access token for OneDrive.' });
     return;
   }
-
-  // Real OneDrive logic
-
-  documents = documents.filter(d => !d.id.startsWith('od_'));
 
   await updateJobProgress(jobId, { percent: 10, completed: 0, total: 10, msg: 'Searching all OneDrive folders recursively...' });
   
@@ -745,61 +688,48 @@ async function syncOneDrive(jobId: string, userId: string, accessToken: string) 
       const downUrl = file['@microsoft.graph.downloadUrl'];
       if (downUrl) {
         const safeName = file.name.replace(/[^a-zA-Z0-9.\-_]/g, '_');
-        const shortId = file.id.length > 24 ? file.id.slice(0, 24) : file.id;
-        const localFilePath = path.join(ONEDRIVE_VAULT, `${shortId}_${safeName}`);
-        const directFilePath = path.join(ONEDRIVE_VAULT, safeName);
+        const storagePath = `${userId}/onedrive/${file.id}_${safeName}`;
 
-        // Fast Skip: If file exists on local disk AND in index, skip download completely
-        const fileExists = fs.existsSync(directFilePath) || fs.existsSync(localFilePath);
-        const isIndexed = documents.some(d => d.id === file.id || d.name === file.name || d.name === safeName);
-        if (fileExists && isIndexed) {
-          console.log(`[OneDrive Sync] Skipping ${file.name} — already downloaded locally on disk.`);
-          continue;
-        }
+        let dbDoc = await prisma.document.findFirst({
+          where: { userId, source: 'onedrive', sourceId: file.id }
+        });
+
+        if (dbDoc?.downloaded) continue;
 
         const fileRes = await fetchWithRetry(downUrl, {}, jobId);
         const buffer = Buffer.from(await fileRes.arrayBuffer());
-        try { fs.writeFileSync(localFilePath, buffer); } catch {}
-        try { fs.writeFileSync(directFilePath, buffer); } catch {}
+        await uploadFile(storagePath, buffer);
 
-        const newDoc = {
-          id: file.id,
-          name: file.name,
-          size: file.size,
-          lastModified: file.lastModifiedDateTime,
-          ai_tag: triageDocument(file.name),
-          downloaded: true,
-          downloaded_at: new Date().toISOString()
-        };
-
-        const idx = documents.findIndex((d) => d.id === file.id);
-        if (idx >= 0) documents[idx] = newDoc;
-        else documents.push(newDoc);
-
-        fs.writeFileSync(docsFile, JSON.stringify(documents, null, 2));
+        if (!dbDoc) {
+          await prisma.document.create({
+            data: {
+              userId,
+              name: file.name,
+              size: file.size,
+              type: 'Document',
+              source: 'onedrive',
+              sourceId: file.id,
+              storagePath,
+              downloaded: true,
+              downloadedAt: new Date()
+            }
+          });
+        } else {
+          await prisma.document.update({
+            where: { id: dbDoc.id },
+            data: { storagePath, downloaded: true, downloadedAt: new Date() }
+          });
+        }
       }
     } catch {}
   }
-
-  fs.writeFileSync(docsFile, JSON.stringify(documents, null, 2));
 }
 
 async function syncOutlook(jobId: string, userId: string, accessToken: string) {
-  const OUTLOOK_VAULT = getUserProviderVaultDir(userId, 'outlook');
-
-  const docsFile = path.join(OUTLOOK_VAULT, 'documents.json');
-  let documents: any[] = [];
-  if (fs.existsSync(docsFile)) {
-    try { documents = JSON.parse(fs.readFileSync(docsFile, 'utf-8')); } catch {}
-  }
-
   if (!accessToken) {
     await updateJobProgress(jobId, { percent: 100, completed: 0, total: 0, msg: 'Missing access token for Outlook.' });
     return;
   }
-
-  // Real Outlook logic (Graph API call)
-  documents = documents.filter(d => !d.id.startsWith('ot_'));
 
   await updateJobProgress(jobId, { percent: 20, completed: 0, total: 1, msg: 'Querying Microsoft Outlook mail...' });
   const messages: any[] = [];
@@ -826,93 +756,43 @@ async function syncOutlook(jobId: string, userId: string, accessToken: string) {
   for (const msg of messages) {
     await checkPause(jobId);
     if (msg.attachments && msg.attachments.length > 0) {
-      const emailSubject = msg.subject || 'No Subject';
-      const emailSender = msg.from?.emailAddress?.address || msg.sender?.emailAddress?.address || 'Unknown Sender';
-      const snippet = msg.bodyPreview || '';
-
-      // 1. Index the Email Itself
-      const emailDocId = `email_${msg.id}`;
-      // Clean the ID for Windows filesystem compatibility (remove invalid chars)
-      const safeEmailId = emailDocId.replace(/[^a-zA-Z0-9.\-_]/g, '_');
-      const emailFilePath = path.join(OUTLOOK_VAULT, `${safeEmailId}.json`);
-      const attachedFiles = (msg.attachments || []).filter((a: any) => a['@odata.type'] === '#microsoft.graph.fileAttachment').map((a: any) => a.name);
-
-      const emailData = {
-        id: emailDocId,
-        subject: emailSubject,
-        sender: emailSender,
-        snippet: snippet,
-        date: msg.lastModifiedDateTime,
-        attachments: attachedFiles
-      };
-      try { fs.writeFileSync(emailFilePath, JSON.stringify(emailData, null, 2)); } catch {}
-
-      const emailIndexDoc = {
-        id: emailDocId,
-        name: `${emailSubject.replace(/[^a-zA-Z0-9.\-_ ]/g, '_').slice(0, 50)}.email`,
-        type: 'Email',
-        size: JSON.stringify(emailData).length,
-        lastModified: msg.lastModifiedDateTime,
-        snippet: snippet,
-        ai_tag: 'Email Communication',
-        downloaded: true,
-        downloaded_at: new Date().toISOString(),
-        emailSubject,
-        emailSender,
-        source: 'Outlook',
-        attachments: attachedFiles
-      };
-
-      const eIdx = documents.findIndex((d) => d.id === emailIndexDoc.id);
-      if (eIdx >= 0) documents[eIdx] = emailIndexDoc;
-      else documents.push(emailIndexDoc);
-
-      // 2. Download and Index Attachments
       for (const att of msg.attachments) {
         if (att['@odata.type'] === '#microsoft.graph.fileAttachment' && isTargetDoc(att.name)) {
           count++;
           const safeName = att.name.replace(/[^a-zA-Z0-9.\-_]/g, '_');
-          const shortId = att.id.length > 24 ? att.id.slice(0, 24) : att.id;
-          const localFilePath = path.join(OUTLOOK_VAULT, `${shortId}_${safeName}`);
-          const directFilePath = path.join(OUTLOOK_VAULT, safeName);
+          const storagePath = `${userId}/outlook/${att.id}_${safeName}`;
           
-          // Fast Skip: If physical file exists on disk and doc is in index, skip download completely
-          const isFileDownloaded = fs.existsSync(directFilePath) || fs.existsSync(localFilePath);
-          const isDocIndexed = documents.some(d => d.id === att.id || d.name === att.name || d.name === safeName);
+          let dbDoc = await prisma.document.findFirst({
+            where: { userId, source: 'outlook', sourceId: att.id }
+          });
 
-          if (isFileDownloaded && isDocIndexed) {
-            console.log(`[Outlook Sync] Skipping ${att.name} — already downloaded locally on disk.`);
-            continue;
-          }
+          if (dbDoc?.downloaded) continue;
 
           const buffer = Buffer.from(att.contentBytes || '', 'base64');
-          try { fs.writeFileSync(localFilePath, buffer); } catch {}
-          try { fs.writeFileSync(directFilePath, buffer); } catch {}
+          await uploadFile(storagePath, buffer);
 
-          const newDoc = {
-            id: att.id,
-            name: att.name,
-            type: 'Document',
-            source: 'Outlook',
-            size: att.size,
-            lastModified: msg.lastModifiedDateTime,
-            ai_tag: triageDocument(att.name),
-            downloaded: true,
-            downloaded_at: new Date().toISOString(),
-            emailSubject,
-            emailSender
-          };
-
-          const idx = documents.findIndex((d) => d.id === newDoc.id);
-          if (idx >= 0) documents[idx] = newDoc;
-          else documents.push(newDoc);
-
-          fs.writeFileSync(docsFile, JSON.stringify(documents, null, 2));
+          if (!dbDoc) {
+            await prisma.document.create({
+              data: {
+                userId,
+                name: att.name,
+                size: att.size,
+                type: 'Email Attachment',
+                source: 'outlook',
+                sourceId: att.id,
+                storagePath,
+                downloaded: true,
+                downloadedAt: new Date()
+              }
+            });
+          } else {
+            await prisma.document.update({
+              where: { id: dbDoc.id },
+              data: { storagePath, downloaded: true, downloadedAt: new Date() }
+            });
+          }
         }
       }
     }
   }
-
-  fs.writeFileSync(docsFile, JSON.stringify(documents, null, 2));
 }
-

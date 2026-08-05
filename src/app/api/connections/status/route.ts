@@ -1,12 +1,10 @@
 import { auth } from '@clerk/nextjs/server';
-// src/app/api/connections/status/route.ts
-// Returns the real connection state for all providers by reading ~/.cluco/tokens.json and directory file counts
-
 import { NextResponse } from 'next/server';
 import fs from 'fs';
 import path from 'path';
 import { readTokens, isTokenExpired, VAULT_DIR } from '@/lib/tokenStore';
 import { startQueueWorker } from '@/lib/queueWorker';
+import { prisma } from '@/lib/prisma';
 
 let cachedStatus: { timestamp: number; payload: any } | null = null;
 const CACHE_TTL_MS = 2000;
@@ -23,8 +21,6 @@ export async function GET() {
   // Start the background worker daemon upon app status load
   startQueueWorker();
 
-  const tokens = readTokens(userId);
-
   const status: Record<string, {
     connected: boolean;
     email?: string;
@@ -33,9 +29,39 @@ export async function GET() {
     docsIngested?: number;
   }> = {};
 
+  // 1. Read from local token store (legacy)
+  const tokens = readTokens(userId);
   for (const [provider, token] of Object.entries(tokens)) {
+    status[provider] = {
+      connected: true,
+      email: token.email,
+      connected_at: token.connected_at,
+      expired: isTokenExpired(token),
+      docsIngested: 0,
+    };
+  }
+
+  // 2. Read from Prisma (new)
+  const dbUser = await prisma.user.findUnique({
+    where: { clerkId: userId },
+    include: { integrations: true }
+  });
+
+  if (dbUser && dbUser.integrations) {
+    for (const integration of dbUser.integrations) {
+      status[integration.platform] = {
+        connected: true,
+        email: 'Connected User',
+        connected_at: integration.updatedAt.toISOString(),
+        expired: integration.expiresAt ? (new Date(integration.expiresAt).getTime() < Date.now()) : false,
+        docsIngested: 0,
+      };
+    }
+  }
+
+  // 3. Count documents for all connected providers
+  for (const provider of Object.keys(status)) {
     let docsIngested = 0;
-    
     try {
       const vaultPath = path.join(VAULT_DIR, 'vault', userId, provider);
       if (provider === 'clio') {
@@ -72,14 +98,7 @@ export async function GET() {
     } catch (e) {
       console.error(`[Status API] Error counting docs for ${provider}:`, e);
     }
-
-    status[provider] = {
-      connected: true,
-      email: token.email,
-      connected_at: token.connected_at,
-      expired: isTokenExpired(token),
-      docsIngested,
-    };
+    status[provider].docsIngested = docsIngested;
   }
 
   cachedStatus = { timestamp: now, payload: status };

@@ -1,17 +1,11 @@
 import { auth } from '@clerk/nextjs/server';
 import { NextResponse } from 'next/server';
-import fs from 'fs';
-import path from 'path';
-import { VAULT_DIR, getToken } from '@/lib/tokenStore';
+import { getToken } from '@/lib/tokenStore';
 import { createClioTask, completeClioTask } from '@/lib/clioPush';
 
-function getClioVault(userId: string) {
-  return path.join(VAULT_DIR, 'vault', userId, 'clio');
-}
 
-function getMatterDir(userId: string, matterId: string | number): string {
-  return path.join(getClioVault(userId), String(matterId));
-}
+import { prisma } from '@/lib/prisma';
+
 
 export async function POST(request: Request) {
   const { userId } = await auth();
@@ -25,40 +19,47 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Matter ID and Task Name are required.' }, { status: 400 });
     }
 
-    const matterDir = getMatterDir(userId, matterId);
+    const matter = await prisma.matter.findUnique({ where: { id: matterId } });
+    if (!matter || matter.userId !== userId) {
+      return NextResponse.json({ error: 'Matter not found.' }, { status: 404 });
+    }
+
     const token = getToken(userId, 'clio');
-    let finalTaskId = String(Date.now());
+    let sourceId = '';
 
     // Push to Clio API if live token present
-    if (token?.access_token) {
+    if (token?.access_token && matter.sourceId) {
       try {
-        const clioTask = await createClioTask(matterId, name, dueAt);
-        finalTaskId = String(clioTask.id);
+        const clioTask = await createClioTask(matter.sourceId, name, dueAt);
+        sourceId = String(clioTask.id);
       } catch (err: any) {
         console.error('[Clio Live Create Task Error]', err);
       }
     }
 
-    // Append task locally
-    const tasksFile = path.join(matterDir, 'tasks.json');
-    let tasks = [];
+    // Write to Postgres
+    const newTask = await prisma.task.create({
+      data: {
+        userId,
+        matterId,
+        name,
+        dueAt: dueAt ? new Date(dueAt) : null,
+        status: 'Pending',
+        source: 'clio',
+        sourceId: sourceId || null,
+        user: { connect: { id: userId } }
+      }
+    });
 
-    if (fs.existsSync(tasksFile)) {
-      tasks = JSON.parse(fs.readFileSync(tasksFile, 'utf-8'));
-    }
-
-    const newTask = {
-      id: finalTaskId,
-      name,
-      due_at: dueAt || null,
-      complete: false
-    };
-
-    tasks.push(newTask);
-    if (!fs.existsSync(matterDir)) fs.mkdirSync(matterDir, { recursive: true });
-    fs.writeFileSync(tasksFile, JSON.stringify(tasks, null, 2));
-
-    return NextResponse.json({ success: true, task: newTask });
+    return NextResponse.json({ 
+      success: true, 
+      task: {
+        id: newTask.id,
+        name: newTask.name,
+        due_at: newTask.dueAt,
+        complete: false
+      }
+    });
   } catch (err: any) {
     console.error('[Tasks POST Error]', err);
     return NextResponse.json({ error: 'Failed to create task.' }, { status: 500 });
@@ -73,38 +74,44 @@ export async function PATCH(request: Request) {
     const body = await request.json();
     const { matterId, taskId, complete } = body;
 
-    if (!matterId || !taskId) {
-      return NextResponse.json({ error: 'Matter ID and Task ID are required.' }, { status: 400 });
+    if (!taskId) {
+      return NextResponse.json({ error: 'Task ID is required.' }, { status: 400 });
     }
 
-    const matterDir = getMatterDir(userId, matterId);
+    const task = await prisma.task.findUnique({ where: { id: taskId } });
+    if (!task || task.userId !== userId) {
+      return NextResponse.json({ error: 'Task not found in vault.' }, { status: 404 });
+    }
+
     const token = getToken(userId, 'clio');
 
     // Update Clio API if live token present
-    if (token?.access_token) {
+    if (token?.access_token && task.sourceId) {
       try {
-        await completeClioTask(taskId, complete);
+        await completeClioTask(task.sourceId, complete);
       } catch (err: any) {
         console.error('[Clio Live Complete Task Error]', err);
       }
     }
 
-    // Update task locally
-    const tasksFile = path.join(matterDir, 'tasks.json');
+    // Update Postgres
+    const updatedTask = await prisma.task.update({
+      where: { id: taskId },
+      data: { status: complete ? 'Completed' : 'Pending' }
+    });
 
-    if (fs.existsSync(tasksFile)) {
-      const tasks = JSON.parse(fs.readFileSync(tasksFile, 'utf-8'));
-      const idx = tasks.findIndex((t: any) => String(t.id) === String(taskId));
-      if (idx >= 0) {
-        tasks[idx].complete = complete;
-        fs.writeFileSync(tasksFile, JSON.stringify(tasks, null, 2));
-        return NextResponse.json({ success: true, task: tasks[idx] });
+    return NextResponse.json({ 
+      success: true, 
+      task: {
+        id: updatedTask.id,
+        name: updatedTask.name,
+        due_at: updatedTask.dueAt,
+        complete: updatedTask.status === 'Completed'
       }
-    }
-
-    return NextResponse.json({ error: 'Task not found in vault.' }, { status: 404 });
+    });
   } catch (err: any) {
     console.error('[Tasks PATCH Error]', err);
     return NextResponse.json({ error: 'Failed to update task.' }, { status: 500 });
   }
 }
+

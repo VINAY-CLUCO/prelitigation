@@ -5,9 +5,10 @@ import { NextResponse } from 'next/server';
 import { addJob, readQueue } from '@/lib/queueStore';
 import { startQueueWorker } from '@/lib/queueWorker';
 import { auth } from '@clerk/nextjs/server';
-import { PrismaClient } from '@prisma/client';
 
-const prisma = new PrismaClient();
+
+import { prisma } from '@/lib/prisma';
+
 export const dynamic = 'force-dynamic';
 
 export async function GET(request: Request) {
