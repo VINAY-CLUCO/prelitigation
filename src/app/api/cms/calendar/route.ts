@@ -45,8 +45,7 @@ export async function POST(request: Request) {
         summary,
         startAt: new Date(startAt),
         source: 'clio',
-        sourceId: sourceId || null,
-        user: { connect: { id: userId } }
+        sourceId: sourceId || null
       }
     });
 

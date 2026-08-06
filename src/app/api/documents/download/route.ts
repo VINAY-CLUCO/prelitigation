@@ -13,6 +13,9 @@ export async function GET(request: Request) {
   const { userId } = await auth();
   if (!userId) return new Response('Unauthorized', { status: 401 });
 
+  const dbUser = await prisma.user.findUnique({ where: { clerkId: userId } });
+  if (!dbUser) return NextResponse.json({ error: 'User not found in DB' }, { status: 404 });
+
   const url = new URL(request.url);
   const docId = url.searchParams.get('id');
 
@@ -30,7 +33,7 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: 'Document not found' }, { status: 404 });
     }
 
-    if (doc.userId !== userId) {
+    if (doc.userId !== dbUser.id) {
       return NextResponse.json({ error: 'Unauthorized to access this document' }, { status: 403 });
     }
 
@@ -66,8 +69,8 @@ export async function GET(request: Request) {
           if (found) return found;
         } else if (entry !== 'documents.json' && entry !== 'matter.json' && entry !== 'calendar.json' && entry !== 'tasks.json') {
           // If the file starts with the DB sourceId or docId
-          if (doc.sourceId && (entry.startsWith(`${doc.sourceId}_`) || entry === doc.sourceId)) return fullPath;
-          if (entry.startsWith(`${doc.id}_`) || entry === doc.id) return fullPath;
+          if (doc!.sourceId && (entry.startsWith(`${doc.sourceId}_`) || entry === doc!.sourceId)) return fullPath;
+          if (entry.startsWith(`${doc!.id}_`) || entry === doc!.id) return fullPath;
         }
       }
       return null;

@@ -46,8 +46,8 @@ export async function POST(request: Request) {
         dueAt: dueAt ? new Date(dueAt) : null,
         status: 'Pending',
         source: 'clio',
-        sourceId: sourceId || null,
-        user: { connect: { id: userId } }
+        sourceId: sourceId || null
+
       }
     });
 
