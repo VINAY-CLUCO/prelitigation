@@ -69,7 +69,7 @@ export async function GET(request: Request) {
           if (found) return found;
         } else if (entry !== 'documents.json' && entry !== 'matter.json' && entry !== 'calendar.json' && entry !== 'tasks.json') {
           // If the file starts with the DB sourceId or docId
-          if (doc!.sourceId && (entry.startsWith(`${doc.sourceId}_`) || entry === doc!.sourceId)) return fullPath;
+          if (doc!.sourceId && (entry.startsWith(`${doc!.sourceId}_`) || entry === doc!.sourceId)) return fullPath;
           if (entry.startsWith(`${doc!.id}_`) || entry === doc!.id) return fullPath;
         }
       }
